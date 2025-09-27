@@ -1,0 +1,44 @@
+{
+  "name": "eassist-api",
+  "version": "10.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "db:create": "node scripts/db-create.js",
+    "migrate:init": "node scripts/run-sql.js db/init.sql",
+    "migrate": "node scripts/run-migrations.js",
+    "migrate:run": "node scripts/run-migrations.js",
+    "migrate:prep": "node scripts/generate-permissions-sql.js",
+    "migrate:all": "npm run migrate:prep && npm run migrate && npm run bootstrap:admin",
+    "migrate:apply": "npm run migrate",
+    "setup": "node scripts/db-create.js && node scripts/run-sql.js db/init.sql",
+    "setup:all": "node scripts/db-create.js && node scripts/run-sql.js db/init.sql && node scripts/seed-initial.js",
+    "seed:initial": "node scripts/seed-initial.js",
+    "seed:permissions": "node scripts/seed-permissions.js",
+    "seed:superuser": "node scripts/seed-superuser.js",
+    "seed:permissions-and-superuser": "node scripts/seed-permissions-and-superuser.js",
+    "seed:all": "npm run seed:permissions-and-superuser && npm run seed-initial",
+    "seed:moh": "node scripts/seed-ministry-health.js",
+    "generate:openapi": "node scripts/generate-openapi.js",
+    "bootstrap:admin": "npm run seed:permissions-and-superuser",
+    "migrate:prep-local": "node scripts/generate-permissions-sql.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-list-endpoints": "^7.1.1",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "pg": "^8.12.0",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7"
+  }
+}

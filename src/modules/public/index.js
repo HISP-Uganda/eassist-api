@@ -1,0 +1,372 @@
+import { Router } from "express";
+import pool from "../../db/pool.js";
+import { parsePagination } from "../../utils/pagination.js";
+import listEndpoints from "express-list-endpoints";
+import { BadRequest, NotFound } from "../../utils/errors.js";
+const r = Router();
+
+// Simple health probe
+r.get("/ping", (req, res) =>
+  res.json({ ok: true, service: "public", time: new Date().toISOString() })
+);
+
+// List all API endpoints that are available without authentication/authorization
+function isNoAuthPath(path) {
+  if (path.startsWith("/api/public")) return true;
+  if (path === "/api/info" || path === "/api/resources") return true;
+  if (path === "/api/docs.json" || path.startsWith("/api/docs")) return true;
+  if (path.startsWith("/api/auth/")) {
+    // whoami remains protected
+    return !path.startsWith("/api/auth/whoami");
+  }
+  return false;
+}
+
+r.get("/endpoints", (req, res) => {
+  const app = req.app;
+  const all = listEndpoints(app) || [];
+  const apiOnly = all.filter((e) => e.path && e.path.startsWith("/api"));
+  const publicOnly = apiOnly.filter((e) => isNoAuthPath(e.path));
+  // Deduplicate identical paths and merge methods
+  const seen = new Map();
+  for (const e of publicOnly) {
+    const key = e.path;
+    if (!seen.has(key)) seen.set(key, new Set());
+    for (const m of e.methods || []) {
+      seen.get(key).add(String(m).toUpperCase());
+    }
+  }
+  const resources = Array.from(seen.entries())
+    .map(([path, methodsSet]) => ({
+      path,
+      methods: Array.from(methodsSet).sort(),
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  res.json({ ok: true, count: resources.length, resources });
+});
+
+// Ticket public helper: list available operations
+r.get("/tickets", (req, res) => {
+  res.json({
+    ok: true,
+    description: "Public ticket endpoints",
+    resources: [
+      {
+        method: "POST",
+        path: "/api/public/tickets",
+        summary: "Submit a new ticket (public)",
+        body: {
+          title: "string",
+          description: "string",
+          email: "string (optional)",
+          system_id: "uuid (optional)",
+        },
+        example:
+          'curl -X POST -H \'Content-Type: application/json\' -d \'{"title":"Printer jam","description":"Keeps jamming","email":"user@example.com"}\' http://localhost:8080/api/public/tickets',
+      },
+      {
+        method: "GET",
+        path: "/api/public/tickets/lookup",
+        summary: "Track ticket status using reference",
+        params: { reference: "ticket reference/key (e.g., HD-2025-0002)" },
+        example:
+          "curl 'http://localhost:8080/api/public/tickets/lookup?reference=HD-2025-0002'",
+      },
+    ],
+  });
+});
+
+// Submit a ticket publicly
+r.post("/tickets", async (req, res, next) => {
+  try {
+    const { email, system_id, title, description } = req.body;
+    if (!title || !description) {
+      return next(BadRequest("title and description are required"));
+    }
+    const ins = await pool.query(
+      `INSERT INTO tickets (title, description, reporter_email, system_id, source_id, status_id, priority_id, severity_id)
+      VALUES ($1,$2,$3,$4,(SELECT id FROM sources WHERE code='web' LIMIT 1),(SELECT id FROM statuses WHERE code='open' LIMIT 1),(SELECT id FROM priorities WHERE code='medium' LIMIT 1),(SELECT id FROM severities WHERE code='minor' LIMIT 1))
+      RETURNING *`,
+      [title, description, email, system_id || null]
+    );
+    res.status(201).json(ins.rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Lookup ticket by reference (public, minimal status payload)
+r.get("/tickets/lookup", async (req, res, next) => {
+  try {
+    const reference = (
+      req.query.reference ||
+      req.query.ref ||
+      req.query.key ||
+      ""
+    )
+      .toString()
+      .trim();
+    if (!reference) {
+      return next(
+        BadRequest("reference is required", {
+          params: { reference: "ticket reference/key" },
+        })
+      );
+    }
+    const q = await pool.query(
+      `
+      SELECT 
+        t.ticket_key AS reference,
+        t.title,
+        t.created_at,
+        t.updated_at,
+        s.code AS status_code,
+        s.name AS status_name,
+        COALESCE(p.code,'') AS priority_code,
+        COALESCE(v.code,'') AS severity_code
+      FROM tickets t
+      LEFT JOIN statuses s ON s.id=t.status_id
+      LEFT JOIN priorities p ON p.id=t.priority_id
+      LEFT JOIN severities v ON v.id=t.severity_id
+      WHERE t.ticket_key=$1
+      LIMIT 1
+    `,
+      [reference]
+    );
+    const row = q.rows[0];
+    if (!row) return next(NotFound("Ticket not found"));
+    // Minimal public payload for tracking
+    res.json({
+      reference: row.reference,
+      title: row.title,
+      status: { code: row.status_code, name: row.status_name },
+      priority: row.priority_code || null,
+      severity: row.severity_code || null,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Public FAQs (published only)
+r.get("/faqs", async (req, res, next) => {
+  try {
+    const { page, pageSize, offset, limit } = parsePagination(req.query);
+    const params = [];
+    const where = [`is_published=true`];
+    if (req.query.q) {
+      params.push(`%${String(req.query.q || "").toLowerCase()}%`);
+      where.push(
+        `(lower(title) LIKE $${params.length} OR lower(body) LIKE $${params.length})`
+      );
+    }
+    if (req.query.system_category_id) {
+      params.push(req.query.system_category_id);
+      where.push(`system_category_id=$${params.length}`);
+    }
+    const whereSql = "WHERE " + where.join(" AND ");
+    const tot = await pool.query(
+      `SELECT count(*)::int c FROM faqs ${whereSql}`,
+      params
+    );
+    const rows = await pool.query(
+      `SELECT id,title,body,system_category_id,created_at FROM faqs ${whereSql} ORDER BY created_at DESC LIMIT $${
+        params.length + 1
+      } OFFSET $${params.length + 2}`,
+      [...params, limit, offset]
+    );
+    res.json({ items: rows.rows, page, pageSize, total: tot.rows[0]?.c || 0 });
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.get("/faqs/:id", async (req, res, next) => {
+  try {
+    // Try centralized detailed reader first and enforce published
+    const enriched = await import("../../utils/relations.js")
+      .then((m) => m.readDetailed)
+      .then((fn) => fn('faqs', 'id', req.params.id, req))
+      .catch(() => null);
+    if (enriched) {
+      if (enriched.is_published) {
+        // return the minimal public shape
+        const { id, title, body, system_category_id, created_at } = enriched;
+        return res.json({ id, title, body, system_category_id, created_at });
+      }
+      return next(NotFound("FAQ not found"));
+    }
+
+    const q = await pool.query(
+      `SELECT id,title,body,system_category_id,created_at FROM faqs WHERE id=$1 AND is_published=true`,
+      [req.params.id]
+    );
+    if (!q.rows[0]) return next(NotFound("FAQ not found"));
+    res.json(q.rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Public KB Articles (published only)
+r.get("/kb/articles", async (req, res, next) => {
+  try {
+    const { page, pageSize, offset, limit } = parsePagination(req.query);
+    const params = [];
+    const where = [`is_published=true`];
+    if (req.query.q) {
+      params.push(`%${String(req.query.q || "").toLowerCase()}%`);
+      where.push(
+        `(lower(title) LIKE $${params.length} OR lower(body) LIKE $${params.length})`
+      );
+    }
+    const whereSql = "WHERE " + where.join(" AND ");
+    const tot = await pool.query(
+      `SELECT count(*)::int c FROM kb_articles ${whereSql}`,
+      params
+    );
+    const rows = await pool.query(
+      `SELECT id,title,body,created_at FROM kb_articles ${whereSql} ORDER BY created_at DESC LIMIT $${
+        params.length + 1
+      } OFFSET $${params.length + 2}`,
+      [...params, limit, offset]
+    );
+    res.json({ items: rows.rows, page, pageSize, total: tot.rows[0]?.c || 0 });
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.get("/kb/articles/:id", async (req, res, next) => {
+  try {
+    // Try centralized detailed reader first and enforce published
+    const enriched = await import("../../utils/relations.js")
+      .then((m) => m.readDetailed)
+      .then((fn) => fn('kb_articles', 'id', req.params.id, req))
+      .catch(() => null);
+    if (enriched) {
+      if (enriched.is_published) {
+        const { id, title, body, created_at } = enriched;
+        return res.json({ id, title, body, created_at });
+      }
+      return next(NotFound("KB article not found"));
+    }
+
+    const q = await pool.query(
+      `SELECT id,title,body,created_at FROM kb_articles WHERE id=$1 AND is_published=true`,
+      [req.params.id]
+    );
+    if (!q.rows[0]) return next(NotFound("KB article not found"));
+    res.json(q.rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// KB ratings summary (public)
+r.get("/kb/ratings/summary", async (req, res, next) => {
+  try {
+    const article_id = req.query.article_id;
+    if (!article_id) return next(BadRequest("article_id required"));
+    const { rows } = await pool.query(
+      `SELECT avg(rating)::numeric(10,2) AS avg, count(*)::int AS count FROM kb_ratings WHERE article_id=$1`,
+      [article_id]
+    );
+    res.json(rows[0] || { avg: null, count: 0 });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Public videos (published only)
+r.get("/videos", async (req, res, next) => {
+  try {
+    const { page, pageSize, offset, limit } = parsePagination(req.query);
+    const params = [];
+    const where = [`is_published=true`];
+    if (req.query.q) {
+      params.push(`%${String(req.query.q || "").toLowerCase()}%`);
+      where.push(
+        `(lower(title) LIKE $${params.length} OR lower(description) LIKE $${params.length})`
+      );
+    }
+    if (req.query.category_id) {
+      params.push(req.query.category_id);
+      where.push(`category_id=$${params.length}`);
+    }
+    if (req.query.system_category_id) {
+      params.push(req.query.system_category_id);
+      where.push(`system_category_id=$${params.length}`);
+    }
+    if (req.query.language) {
+      params.push(req.query.language);
+      where.push(`language=$${params.length}`);
+    }
+    const whereSql = "WHERE " + where.join(" AND ");
+    const tot = await pool.query(
+      `SELECT count(*)::int c FROM videos ${whereSql}`,
+      params
+    );
+    const rows = await pool.query(
+      `SELECT id,title,description,category_id,system_category_id,url,duration_seconds,language,created_at FROM videos ${whereSql} ORDER BY created_at DESC LIMIT $${
+        params.length + 1
+      } OFFSET $${params.length + 2}`,
+      [...params, limit, offset]
+    );
+    res.json({ items: rows.rows, page, pageSize, total: tot.rows[0]?.c || 0 });
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.get("/videos/categories", async (req, res, next) => {
+  try {
+    const { page, pageSize, offset, limit } = parsePagination(req.query);
+    const params = [];
+    const where = [];
+    if (req.query.q) {
+      params.push(`%${String(req.query.q || "").toLowerCase()}%`);
+      where.push(`lower(name) LIKE $${params.length}`);
+    }
+    const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
+    const tot = await pool.query(
+      `SELECT count(*)::int c FROM video_categories ${whereSql}`,
+      params
+    );
+    const rows = await pool.query(
+      `SELECT id,name FROM video_categories ${whereSql} ORDER BY name ASC LIMIT $${
+        params.length + 1
+      } OFFSET $${params.length + 2}`,
+      [...params, limit, offset]
+    );
+    res.json({ items: rows.rows, page, pageSize, total: tot.rows[0]?.c || 0 });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Public search (published only)
+r.get("/search", async (req, res, next) => {
+  try {
+    const q = String(req.query.q || "").toLowerCase();
+    const faqs = await pool.query(
+      `SELECT id,title FROM faqs WHERE is_published=true AND lower(title) LIKE '%'||$1||'%' LIMIT 10`,
+      [q]
+    );
+    const kb = await pool.query(
+      `SELECT id,title FROM kb_articles WHERE is_published=true AND lower(title) LIKE '%'||$1||'%' LIMIT 10`,
+      [q]
+    );
+    const videos = await pool.query(
+      `SELECT id,title FROM videos WHERE is_published=true AND lower(title) LIKE '%'||$1||'%' LIMIT 10`,
+      [q]
+    );
+    res.json({ faqs: faqs.rows, kb: kb.rows, videos: videos.rows });
+  } catch (e) {
+    next(e);
+  }
+});
+
+export default r;
