@@ -5,20 +5,16 @@ import { requireAnyPermission } from "../../../middleware/auth.js";
 import { PERMISSIONS } from "../../../constants/permissions.js";
 const r = Router();
 const t = "statuses";
-r.get(
-  "/",
-  requireAnyPermission(
-    PERMISSIONS.SYS_LOOKUPS_STATUSES_LIST,
-    PERMISSIONS.SYSTEM_MANAGE
-  ),
-  async (a, b, c) => {
-    try {
-      b.json(await listDetailed(t, a));
-    } catch (e) {
-      c(e);
-    }
+
+// Public GET
+r.get("/", async (a, b, c) => {
+  try {
+    b.json(await listDetailed(t, a));
+  } catch (e) {
+    c(e);
   }
-);
+});
+
 r.post(
   "/",
   requireAnyPermission(
@@ -35,20 +31,16 @@ r.post(
     }
   }
 );
-r.get(
-  "/:id",
-  requireAnyPermission(
-    PERMISSIONS.SYS_LOOKUPS_STATUSES_LIST,
-    PERMISSIONS.SYSTEM_MANAGE
-  ),
-  async (a, b, c) => {
-    try {
-      b.json(await readDetailed(t, "id", a.params.id, a));
-    } catch (e) {
-      c(e);
-    }
+
+// Public GET by id
+r.get("/:id", async (a, b, c) => {
+  try {
+    b.json(await readDetailed(t, "id", a.params.id, a));
+  } catch (e) {
+    c(e);
   }
-);
+});
+
 r.put(
   "/:id",
   requireAnyPermission(
@@ -70,6 +62,7 @@ r.put(
     }
   }
 );
+
 r.delete(
   "/:id",
   requireAnyPermission(

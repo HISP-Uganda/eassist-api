@@ -11,20 +11,15 @@ function isIntString(v) {
   return /^[0-9]+$/.test(String(v));
 }
 
-r.get(
-  "/",
-  requireAnyPermission(
-    PERMISSIONS.SYS_LOOKUPS_SYSTEM_MODULES_LIST,
-    PERMISSIONS.SYSTEM_MANAGE
-  ),
-  async (a, b, c) => {
-    try {
-      b.json(await listDetailed(t, a));
-    } catch (e) {
-      c(e);
-    }
+// Public GET
+r.get("/", async (a, b, c) => {
+  try {
+    b.json(await listDetailed(t, a));
+  } catch (e) {
+    c(e);
   }
-);
+});
+
 r.post(
   "/",
   requireAnyPermission(
@@ -55,20 +50,16 @@ r.post(
     }
   }
 );
-r.get(
-  "/:id",
-  requireAnyPermission(
-    PERMISSIONS.SYS_LOOKUPS_SYSTEM_MODULES_READ,
-    PERMISSIONS.SYSTEM_MANAGE
-  ),
-  async (a, b, c) => {
-    try {
-      b.json(await readDetailed(t, "id", a.params.id, a));
-    } catch (e) {
-      c(e);
-    }
+
+// Public GET by id
+r.get("/:id", async (a, b, c) => {
+  try {
+    b.json(await readDetailed(t, "id", a.params.id, a));
+  } catch (e) {
+    c(e);
   }
-);
+});
+
 r.put(
   "/:id",
   requireAnyPermission(
@@ -79,7 +70,8 @@ r.put(
     try {
       const payload = { ...a.body };
       if ("system_id" in payload) {
-        if (!isIntString(payload.system_id)) return c(BadRequest("system_id must be an integer"));
+        if (!isIntString(payload.system_id))
+          return c(BadRequest("system_id must be an integer"));
         payload.system_id = parseInt(payload.system_id, 10);
       }
       b.json(
@@ -96,6 +88,7 @@ r.put(
     }
   }
 );
+
 r.delete(
   "/:id",
   requireAnyPermission(

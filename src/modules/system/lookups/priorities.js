@@ -5,20 +5,16 @@ import { requireAnyPermission } from "../../../middleware/auth.js";
 import { PERMISSIONS } from "../../../constants/permissions.js";
 const r = Router();
 const t = "priorities";
-r.get(
-  "/",
-  requireAnyPermission(
-    PERMISSIONS.SYS_LOOKUPS_PRIORITIES_LIST,
-    PERMISSIONS.SYSTEM_MANAGE
-  ),
-  async (a, b, c) => {
-    try {
-      b.json(await listDetailed(t, a));
-    } catch (e) {
-      c(e);
-    }
+
+// Public GET
+r.get("/", async (a, b, c) => {
+  try {
+    b.json(await listDetailed(t, a));
+  } catch (e) {
+    c(e);
   }
-);
+});
+
 r.post(
   "/",
   requireAnyPermission(
@@ -27,26 +23,24 @@ r.post(
   ),
   async (a, b, c) => {
     try {
-      b.status(201).json(await create(t, a.body, ["code", "name", "sort_order"]));
+      b.status(201).json(
+        await create(t, a.body, ["code", "name", "sort_order"])
+      );
     } catch (e) {
       c(e);
     }
   }
 );
-r.get(
-  "/:id",
-  requireAnyPermission(
-    PERMISSIONS.SYS_LOOKUPS_PRIORITIES_LIST,
-    PERMISSIONS.SYSTEM_MANAGE
-  ),
-  async (a, b, c) => {
-    try {
-      b.json(await readDetailed(t, "id", a.params.id, a));
-    } catch (e) {
-      c(e);
-    }
+
+// Public GET by id
+r.get("/:id", async (a, b, c) => {
+  try {
+    b.json(await readDetailed(t, "id", a.params.id, a));
+  } catch (e) {
+    c(e);
   }
-);
+});
+
 r.put(
   "/:id",
   requireAnyPermission(
@@ -55,12 +49,19 @@ r.put(
   ),
   async (a, b, c) => {
     try {
-      b.json(await update(t, "id", a.params.id, a.body, ["code", "name", "sort_order"]));
+      b.json(
+        await update(t, "id", a.params.id, a.body, [
+          "code",
+          "name",
+          "sort_order",
+        ])
+      );
     } catch (e) {
       c(e);
     }
   }
 );
+
 r.delete(
   "/:id",
   requireAnyPermission(

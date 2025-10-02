@@ -5,17 +5,16 @@ import { requirePermissions } from "../../../middleware/auth.js";
 import { PERMISSIONS } from "../../../constants/permissions.js";
 const r = Router();
 const t = "issue_categories";
-r.get(
-  "/",
-  requirePermissions(PERMISSIONS.SYS_LOOKUPS_ISSUE_CATEGORIES_LIST),
-  async (a, b, c) => {
-    try {
-      b.json(await listDetailed(t, a));
-    } catch (e) {
-      c(e);
-    }
+
+// Public GET
+r.get("/", async (a, b, c) => {
+  try {
+    b.json(await listDetailed(t, a));
+  } catch (e) {
+    c(e);
   }
-);
+});
+
 r.post(
   "/",
   requirePermissions(PERMISSIONS.SYS_LOOKUPS_ISSUE_CATEGORIES_CREATE),
@@ -36,17 +35,16 @@ r.post(
     }
   }
 );
-r.get(
-  "/:id",
-  requirePermissions(PERMISSIONS.SYS_LOOKUPS_ISSUE_CATEGORIES_READ),
-  async (a, b, c) => {
-    try {
-      b.json(await readDetailed(t, "id", a.params.id, a));
-    } catch (e) {
-      c(e);
-    }
+
+// Public GET by id
+r.get("/:id", async (a, b, c) => {
+  try {
+    b.json(await readDetailed(t, "id", a.params.id, a));
+  } catch (e) {
+    c(e);
   }
-);
+});
+
 r.put(
   "/:id",
   requirePermissions(PERMISSIONS.SYS_LOOKUPS_ISSUE_CATEGORIES_UPDATE),
@@ -67,6 +65,7 @@ r.put(
     }
   }
 );
+
 r.delete(
   "/:id",
   requirePermissions(PERMISSIONS.SYS_LOOKUPS_ISSUE_CATEGORIES_DELETE),
