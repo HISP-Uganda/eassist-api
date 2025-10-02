@@ -117,4 +117,54 @@ function pickFields(obj, fields) {
   return out;
 }
 
-export { buildSelectColumns, pickFields };
+// Deep picker with dot-path support; handles arrays of objects as well
+function pickFieldsDeep(obj, fields) {
+  if (!obj || !fields) return obj;
+  const parts = String(fields).split(',').map(s=>s.trim()).filter(Boolean);
+  if (!parts.length) return obj;
+  // Build a tree of requested paths
+  const tree = {};
+  for (const p of parts) {
+    const segs = p.split('.').filter(Boolean);
+    let cur = tree;
+    for (let i = 0; i < segs.length; i++) {
+      const k = segs[i];
+      if (!cur[k]) cur[k] = {};
+      cur = cur[k];
+    }
+    // mark leaf
+    cur['__leaf__'] = true;
+  }
+  const project = (value, spec) => {
+    if (value === null || value === undefined) return value;
+    // If spec has __leaf__ only, include value as-is
+    const keys = Object.keys(spec).filter(k => k !== '__leaf__');
+    if (!keys.length) return value;
+    if (Array.isArray(value)) {
+      return value.map(v => project(v, spec));
+    }
+    if (typeof value !== 'object') {
+      // primitive, return as-is
+      return value;
+    }
+    const out = {};
+    for (const k of keys) {
+      if (Object.prototype.hasOwnProperty.call(value, k)) {
+        out[k] = project(value[k], spec[k]);
+      }
+    }
+    return out;
+  };
+  // Top-level projection: if any plain top-level keys present in tree, copy them; otherwise if only __leaf__, return original
+  const topKeys = Object.keys(tree).filter(k => k !== '__leaf__');
+  if (!topKeys.length) return obj;
+  const result = {};
+  for (const k of topKeys) {
+    if (Object.prototype.hasOwnProperty.call(obj, k)) {
+      result[k] = project(obj[k], tree[k]);
+    }
+  }
+  return result;
+}
+
+export { buildSelectColumns, pickFields, pickFieldsDeep };

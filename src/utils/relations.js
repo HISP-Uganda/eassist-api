@@ -1,6 +1,7 @@
 /* eslint-disable no-unused-vars */
 import pool from '../db/pool.js';
 import { buildSelectColumns } from './crud.js';
+import { pickFieldsDeep } from './crud.js';
 
 // Mapping from FK column to target table and default allowed attrs
 const FK_MAP = {
@@ -62,19 +63,19 @@ export async function listDetailed(table, req, order = '1 DESC'){
     }
     const qKey = `with_attrs_${rel.key}`;
     const attrs = parseAttrs(req, qKey, rel.allowed, rel.defaults);
-    const pairs = attrs.map(a => `'${a}', ${rel.table[0]}.${a}`);
-    // use alias as first letter(s) to avoid conflicts
     const alias = rel.table.replace(/[^a-z0-9]/g,'_').slice(0,3);
     // ensure alias unique by appending index
     const idx = joinParts.length + 1;
     const aAlias = `${alias}${idx}`;
+    const pairs = attrs.map(a => `'${a}', ${aAlias}.${a}`);
     selectParts.push(`jsonb_build_object(${pairs.join(', ')}) AS ${rel.key}`);
     joinParts.push(`LEFT JOIN ${rel.table} ${aAlias} ON t.${rel.col} = ${aAlias}.id`);
   }
   const whereSql = ''; // callers often include filters; for general list we return all ordered
   const sql = `SELECT ${selectParts.join(', ')} FROM ${table} t ${joinParts.join(' ')} ORDER BY ${order}`;
   const { rows } = await pool.query(sql);
-  return rows;
+  const fields = req?.query?.fields || null;
+  return fields ? rows.map(r => pickFieldsDeep(r, fields)) : rows;
 }
 
 export async function readDetailed(table, idCol, id, req){
@@ -100,14 +101,16 @@ export async function readDetailed(table, idCol, id, req){
     }
     const qKey = `with_attrs_${rel.key}`;
     const attrs = parseAttrs(req, qKey, rel.allowed, rel.defaults);
-    const pairs = attrs.map(a => `'${a}', ${rel.table[0]}.${a}`);
     const alias = rel.table.replace(/[^a-z0-9]/g,'_').slice(0,3);
     const idx = joinParts.length + 1;
     const aAlias = `${alias}${idx}`;
+    const pairs = attrs.map(a => `'${a}', ${aAlias}.${a}`);
     selectParts.push(`jsonb_build_object(${pairs.join(', ')}) AS ${rel.key}`);
     joinParts.push(`LEFT JOIN ${rel.table} ${aAlias} ON t.${rel.col} = ${aAlias}.id`);
   }
   const sql = `SELECT ${selectParts.join(', ')} FROM ${table} t ${joinParts.join(' ')} WHERE t.${idCol} = $1 LIMIT 1`;
   const { rows } = await pool.query(sql, [id]);
-  return rows[0];
+  const row = rows[0];
+  const fields = req?.query?.fields || null;
+  return fields ? pickFieldsDeep(row, fields) : row;
 }

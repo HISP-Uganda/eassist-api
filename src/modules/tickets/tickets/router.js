@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { read, create, update, remove as del, pickFields } from "../../../utils/crud.js";
+import { read, create, update, remove as del, pickFields, pickFieldsDeep } from "../../../utils/crud.js";
 import pool from "../../../db/pool.js";
 import { parsePagination } from "../../../utils/pagination.js";
 import { requireAnyPermission } from "../../../middleware/auth.js";
@@ -180,7 +180,11 @@ r.get(
 
       const finalSql = `SELECT ${selectParts.join(', ')} FROM ${table} t ${joinParts.join(' ')} ${whereSql} ORDER BY ${order} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
       const { rows } = await pool.query(finalSql, [...params, limit, offset]);
-      res.json({ items: rows, page, pageSize, total });
+      const fields = req.query.fields || null;
+      const items = fields
+        ? rows.map((row) => pickFieldsDeep(row, fields))
+        : rows;
+      res.json({ items, page, pageSize, total });
     } catch (e) {
       next(e);
     }
@@ -251,7 +255,9 @@ r.get(
         [req.params.id]
       );
       const result = { ...baseRow, attachments: atts };
-      res.json(req.query.fields ? pickFields(result, req.query.fields) : result);
+      const fields = req.query.fields || null;
+      const payload = fields ? pickFieldsDeep(result, fields) : result;
+      res.json(payload);
     } catch (e) {
       next(e);
     }

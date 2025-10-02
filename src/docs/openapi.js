@@ -75,6 +75,17 @@ function listQueryParams() {
   ];
 }
 
+function fieldsParam() {
+  return {
+    name: "fields",
+    in: "query",
+    required: false,
+    schema: { type: "string" },
+    description:
+      "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name').",
+  };
+}
+
 // Manual overrides per path+method (add/merge params, requestBody)
 const OVERRIDES = {
   "/api/public/tickets/lookup": {
@@ -903,7 +914,13 @@ export default function buildOpenApi(app) {
     const oaPath = expressToOpenApiPath(e.path);
     if (!paths[oaPath]) paths[oaPath] = {};
     const pathParamNames = extractPathParams(e.path);
-    const params = pathParamNames.map((name) => ({ name, in: "path", required: true, schema: { type: "string" }, description: `Path parameter: ${name}` }));
+    const params = pathParamNames.map((name) => ({
+      name,
+      in: "path",
+      required: true,
+      schema: { type: "string" },
+      description: `Path parameter: ${name}`,
+    }));
     const tag = tagFor(e.path);
     tagsSet.add(tag);
     for (const m of e.methods || []) {
@@ -952,8 +969,13 @@ export default function buildOpenApi(app) {
         }
       };
 
-      if (method === "get" && pathParamNames.length === 0) {
-        op.parameters = [...op.parameters, ...listQueryParams()];
+      if (method === "get") {
+        // Always include fields param for GET
+        op.parameters = [...op.parameters, fieldsParam()];
+        // Include pagination/search only for collection-like endpoints (no path params)
+        if (pathParamNames.length === 0) {
+          op.parameters = [...op.parameters, ...listQueryParams()];
+        }
       }
       if (["post", "put", "patch"].includes(method)) {
         op.requestBody = op.requestBody || {
