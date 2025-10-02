@@ -14,6 +14,8 @@ const allow = [
   "description",
   "reporter_user_id",
   "reporter_email",
+  "full_name",
+  "phone_number",
   "system_id",
   "module_id",
   "category_id",
@@ -159,22 +161,22 @@ r.get(
       for (const [name, info] of Object.entries(relations)){
         const requested = parseAttrs(name);
         const attrs = requested ? requested.filter(a=>info.allowed.includes(a)) : info.defaults;
-        // build jsonb_build_object('k', alias.k, ...) pairs
         const pairs = [];
         for (const a of attrs){
-          // safe mapping: column names are trusted from allowed list
           pairs.push(`'${a}', ${info.alias}.${a}`);
         }
-        // if no attrs, still include id
         if (!pairs.length) pairs.push("'id', " + info.alias + ".id");
         if (presentSet.has(info.table)){
           selectParts.push(`jsonb_build_object(${pairs.join(', ')}) AS ${name}`);
           joinParts.push(`LEFT JOIN ${info.table} ${info.alias} ON ${info.on}`);
         } else {
-          // table missing in this schema: return null for the relation
           selectParts.push(`NULL::jsonb AS ${name}`);
         }
       }
+      // Include attachments count in list view
+      selectParts.push(`(
+        SELECT count(*)::int FROM ticket_attachments ta WHERE ta.ticket_id = t.id
+      ) AS attachments_count`);
 
       const finalSql = `SELECT ${selectParts.join(', ')} FROM ${table} t ${joinParts.join(' ')} ${whereSql} ORDER BY ${order} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
       const { rows } = await pool.query(finalSql, [...params, limit, offset]);
@@ -203,39 +205,52 @@ r.get(
   async (req, res, next) => {
     try {
       const enriched = await import('../../../utils/relations.js').then(m=>m.readDetailed).then(fn=>fn(table, idCol, req.params.id, req)).catch(()=>null);
-      if (enriched) return res.json(req.query.fields ? pickFields(enriched, req.query.fields) : enriched);
-      // Fall back to previous detailed SELECT if central helper didn't produce a row
-      const row = await read(table, idCol, req.params.id);
-      if (!row) return next(NotFound("Ticket not found"));
-      const { rows: singleRows } = await pool.query(
-        `SELECT t.*, 
-           jsonb_build_object('id', u.id, 'email', u.email, 'full_name', u.full_name) AS reporter_user,
-           jsonb_build_object('id', au.id, 'email', au.email, 'full_name', au.full_name) AS assigned_agent,
-           jsonb_build_object('id', s.id, 'name', s.name, 'code', s.code) AS system,
-           jsonb_build_object('id', sm.id, 'name', sm.name) AS module,
-           jsonb_build_object('id', ic.id, 'name', ic.name) AS category,
-           jsonb_build_object('id', st.id, 'name', st.name, 'code', st.code) AS status,
-           jsonb_build_object('id', p.id, 'name', p.name, 'code', p.code) AS priority,
-           jsonb_build_object('id', sv.id, 'name', sv.name, 'code', sv.code) AS severity,
-           jsonb_build_object('id', src.id, 'name', src.name, 'code', src.code) AS source,
-           jsonb_build_object('id', agp.id, 'name', agp.name) AS "group",
-           jsonb_build_object('id', at.id, 'name', at.name) AS tier
-         FROM ${table} t
-         LEFT JOIN users u ON t.reporter_user_id = u.id
-         LEFT JOIN users au ON t.assigned_agent_id = au.id
-         LEFT JOIN systems s ON t.system_id = s.id
-         LEFT JOIN system_modules sm ON t.module_id = sm.id
-         LEFT JOIN issue_categories ic ON t.category_id = ic.id
-         LEFT JOIN statuses st ON t.status_id = st.id
-         LEFT JOIN priorities p ON t.priority_id = p.id
-         LEFT JOIN severities sv ON t.severity_id = sv.id
-         LEFT JOIN sources src ON t.source_id = src.id
-         LEFT JOIN agent_groups agp ON t.group_id = agp.id
-         LEFT JOIN agent_tiers at ON t.tier_id = at.id
-         WHERE t.id = $1 LIMIT 1`,
+      let baseRow = null;
+      if (enriched) {
+        baseRow = enriched;
+      } else {
+        const row = await read(table, idCol, req.params.id);
+        if (!row) return next(NotFound("Ticket not found"));
+        const { rows: singleRows } = await pool.query(
+          `SELECT t.*, 
+             jsonb_build_object('id', u.id, 'email', u.email, 'full_name', u.full_name) AS reporter_user,
+             jsonb_build_object('id', au.id, 'email', au.email, 'full_name', au.full_name) AS assigned_agent,
+             jsonb_build_object('id', s.id, 'name', s.name, 'code', s.code) AS system,
+             jsonb_build_object('id', sm.id, 'name', sm.name) AS module,
+             jsonb_build_object('id', ic.id, 'name', ic.name) AS category,
+             jsonb_build_object('id', st.id, 'name', st.name, 'code', st.code) AS status,
+             jsonb_build_object('id', p.id, 'name', p.name, 'code', p.code) AS priority,
+             jsonb_build_object('id', sv.id, 'name', sv.name, 'code', sv.code) AS severity,
+             jsonb_build_object('id', src.id, 'name', src.name, 'code', src.code) AS source,
+             jsonb_build_object('id', agp.id, 'name', agp.name) AS "group",
+             jsonb_build_object('id', at.id, 'name', at.name) AS tier,
+             (
+               SELECT count(*)::int FROM ticket_attachments ta WHERE ta.ticket_id = t.id
+             ) AS attachments_count
+           FROM ${table} t
+           LEFT JOIN users u ON t.reporter_user_id = u.id
+           LEFT JOIN users au ON t.assigned_agent_id = au.id
+           LEFT JOIN systems s ON t.system_id = s.id
+           LEFT JOIN system_modules sm ON t.module_id = sm.id
+           LEFT JOIN issue_categories ic ON t.category_id = ic.id
+           LEFT JOIN statuses st ON t.status_id = st.id
+           LEFT JOIN priorities p ON t.priority_id = p.id
+           LEFT JOIN severities sv ON t.severity_id = sv.id
+           LEFT JOIN sources src ON t.source_id = src.id
+           LEFT JOIN agent_groups agp ON t.group_id = agp.id
+           LEFT JOIN agent_tiers at ON t.tier_id = at.id
+           WHERE t.id = $1 LIMIT 1`,
+          [req.params.id]
+        );
+        baseRow = singleRows[0] || row;
+      }
+      // Fetch attachments and attach to response
+      const { rows: atts } = await pool.query(
+        `SELECT id, ticket_id, file_name, file_type, file_size_bytes, storage_path, uploaded_by, uploaded_at
+         FROM ticket_attachments WHERE ticket_id = $1 ORDER BY uploaded_at DESC`,
         [req.params.id]
       );
-      const result = singleRows[0] || row;
+      const result = { ...baseRow, attachments: atts };
       res.json(req.query.fields ? pickFields(result, req.query.fields) : result);
     } catch (e) {
       next(e);

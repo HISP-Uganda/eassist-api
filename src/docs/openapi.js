@@ -40,6 +40,8 @@ function isNoAuthPath(path) {
   if (path.startsWith("/api/public")) return true;
   if (path === "/api/info" || path === "/api/resources") return true;
   if (path === "/api/docs.json" || path.startsWith("/api/docs")) return true;
+  // NEW: lookups are public for GET
+  if (path.startsWith("/api/system/lookups")) return true;
   if (path.startsWith("/api/auth/")) {
     // whoami remains protected
     return !path.startsWith("/api/auth/whoami");
@@ -142,38 +144,23 @@ const OVERRIDES = {
               properties: {
                 title: { type: "string" },
                 description: { type: "string" },
-                email: { type: "string", format: "email" },
-                system_id: { type: "string", format: "uuid" },
+                reporter_email: { type: "string", format: "email", nullable: true },
+                full_name: { type: "string", nullable: true },
+                phone_number: { type: "string", nullable: true },
+                system_id: { type: "integer", nullable: true },
+                module_id: { type: "integer", nullable: true },
+                category_id: { type: "integer", nullable: true },
+                priority_id: { type: "integer", nullable: true },
+                severity_id: { type: "integer", nullable: true },
+                source_id: { type: "integer", nullable: true },
               },
             },
             example: {
               title: "Printer jam",
               description: "Keeps jamming after 3 pages",
-              email: "user@example.com",
-            },
-          },
-        },
-      },
-      responses: {
-        201: {
-          description: "Ticket created",
-          content: {
-            "application/json": {
-              schema: { type: "object" },
-              examples: {
-                sample: {
-                  value: {
-                    id: "100",
-                    ticket_key: "HD-2025-0003",
-                    title: "Printer jam",
-                    description: "Keeps jamming",
-                    status_id: 1,
-                    priority_id: 2,
-                    severity_id: 1,
-                    created_at: "2025-09-23T09:30:00Z",
-                  },
-                },
-              },
+              reporter_email: "user@example.com",
+              full_name: "Jane Doe",
+              phone_number: "+256770000000",
             },
           },
         },
@@ -219,6 +206,41 @@ const OVERRIDES = {
                   },
                 },
               },
+            },
+          },
+        },
+      },
+    },
+    post: {
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              required: ["title", "description"],
+              properties: {
+                title: { type: "string" },
+                description: { type: "string" },
+                reporter_user_id: { type: "string", nullable: true },
+                reporter_email: { type: "string", format: "email", nullable: true },
+                full_name: { type: "string", nullable: true },
+                phone_number: { type: "string", nullable: true },
+                system_id: { type: "integer", nullable: true },
+                module_id: { type: "integer", nullable: true },
+                category_id: { type: "integer", nullable: true },
+                priority_id: { type: "integer", nullable: true },
+                severity_id: { type: "integer", nullable: true },
+                source_id: { type: "integer", nullable: true },
+              },
+              additionalProperties: true,
+            },
+            example: {
+              title: "VPN down",
+              description: "Cannot connect",
+              reporter_email: "staff@org.test",
+              full_name: "John Doe",
+              phone_number: "+256780000000",
             },
           },
         },
@@ -767,6 +789,74 @@ export default function buildOpenApi(app) {
       // Workflows
       WorkflowRule: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, enabled: { type: "boolean" }, trigger: { type: "string" }, actions: { type: "array", items: { type: "object", additionalProperties: true } } } },
 
+      // Tickets and attachments schemas with audit fields
+      TicketAttachment: {
+        type: "object",
+        required: ["id", "ticket_id", "file_name", "file_type", "file_size_bytes", "storage_path"],
+        properties: {
+          id: { type: "string" },
+          ticket_id: { type: "string" },
+          file_name: { type: "string" },
+          file_type: { type: "string" },
+          file_size_bytes: { type: "integer" },
+          storage_path: { type: "string" },
+          uploaded_by: { type: "string", nullable: true },
+          uploaded_at: { type: "string", format: "date-time" },
+        },
+      },
+      TicketNote: {
+        type: "object",
+        required: ["id", "ticket_id", "body"],
+        properties: {
+          id: { type: "string" },
+          ticket_id: { type: "string" },
+          user_id: { type: "string", nullable: true },
+          body: { type: "string" },
+          is_internal: { type: "boolean" },
+          created_at: { type: "string", format: "date-time" },
+        },
+      },
+      Ticket: {
+        type: "object",
+        required: ["id", "ticket_key", "title"],
+        properties: {
+          id: { type: "string" },
+          ticket_key: { type: "string" },
+          title: { type: "string" },
+          description: { type: "string", nullable: true },
+          reporter_user_id: { type: "string", nullable: true },
+          reporter_email: { type: "string", format: "email", nullable: true },
+          full_name: { type: "string", nullable: true },
+          phone_number: { type: "string", nullable: true },
+          system_id: { type: "integer", nullable: true },
+          module_id: { type: "integer", nullable: true },
+          category_id: { type: "integer", nullable: true },
+          status_id: { type: "integer", nullable: true },
+          priority_id: { type: "integer", nullable: true },
+          severity_id: { type: "integer", nullable: true },
+          source_id: { type: "integer", nullable: true },
+          assigned_agent_id: { type: "string", nullable: true },
+          group_id: { type: "integer", nullable: true },
+          tier_id: { type: "integer", nullable: true },
+          claimed_by: { type: "string", nullable: true },
+          claimed_at: { type: "string", format: "date-time", nullable: true },
+          reopen_count: { type: "integer", nullable: true },
+          last_public_update_at: { type: "string", format: "date-time", nullable: true },
+          created_at: { type: "string", format: "date-time" },
+          updated_at: { type: "string", format: "date-time", nullable: true },
+          attachments_count: { type: "integer", nullable: true },
+          attachments: { type: "array", items: { $ref: "#/components/schemas/TicketAttachment" } },
+        },
+      },
+      TicketList: {
+        type: "object",
+        properties: {
+          items: { type: "array", items: { $ref: "#/components/schemas/Ticket" } },
+          page: { type: "integer" },
+          pageSize: { type: "integer" },
+          total: { type: "integer" },
+        },
+      },
     },
   }; // close components
 
@@ -808,17 +898,12 @@ export default function buildOpenApi(app) {
     return { type: 'object' };
   }
 
+  // Build paths using endpoints
   for (const e of apiEndpoints) {
     const oaPath = expressToOpenApiPath(e.path);
     if (!paths[oaPath]) paths[oaPath] = {};
     const pathParamNames = extractPathParams(e.path);
-    const params = pathParamNames.map((name) => ({
-      name,
-      in: "path",
-      required: true,
-      schema: { type: "string" },
-      description: `Path parameter: ${name}`,
-    }));
+    const params = pathParamNames.map((name) => ({ name, in: "path", required: true, schema: { type: "string" }, description: `Path parameter: ${name}` }));
     const tag = tagFor(e.path);
     tagsSet.add(tag);
     for (const m of e.methods || []) {
@@ -1070,7 +1155,7 @@ export default function buildOpenApi(app) {
         "- API key: X-API-Key: <raw>",
         "- Cookie (browser): access_token, refresh_token (HttpOnly)",
         "",
-        "Public endpoints under /api/public do not require authentication.",
+        "Public endpoints under /api/public and /api/system/lookups do not require authentication.",
         "Use /api/auth/login to obtain tokens, /api/resources to list endpoints, and /api/info for diagnostics.",
         "",
         "Errors are documented inline per operation, extending ErrorResponseBase with endpoint-appropriate details and example messages.",
