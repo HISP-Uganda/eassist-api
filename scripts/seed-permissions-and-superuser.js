@@ -119,28 +119,47 @@ async function main() {
     name: "Superuser",
     description: "Full access",
   };
-  const roleCode = String(
+  const superCode = String(
     SUPER.code || SUPER.name || "superuser"
   ).toLowerCase();
 
-  const roleRes = await client.query(
+  const superRes = await client.query(
     `INSERT INTO public.roles (id, code, name, description) VALUES (gen_random_uuid(), $1, $2, $3) ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, description = COALESCE(EXCLUDED.description, public.roles.description), updated_at = now() RETURNING id;`,
-    [roleCode, SUPER.name || "Superuser", SUPER.description || null]
+    [superCode, SUPER.name || "Superuser", SUPER.description || null]
   );
-  const roleId = roleRes.rows[0].id;
+  const superId = superRes.rows[0].id;
 
   // grant all permissions to superuser role
   await client.query(
     `INSERT INTO public.role_permissions (role_id, permission_id) SELECT $1, p.id FROM public.permissions p ON CONFLICT DO NOTHING;`,
-    [roleId]
+    [superId]
   );
+
+  // ensure Agent role exists with defined permissions
+  const AGENT = DEFAULT_ROLES?.AGENT || { code: 'agent', name: 'Agent', description: 'Support agent' };
+  const agentCode = String(AGENT.code || AGENT.name || 'agent').toLowerCase();
+  const agentRes = await client.query(
+    `INSERT INTO public.roles (id, code, name, description) VALUES (gen_random_uuid(), $1, $2, $3) ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, description = COALESCE(EXCLUDED.description, public.roles.description), updated_at = now() RETURNING id;`,
+    [agentCode, AGENT.name || 'Agent', AGENT.description || null]
+  );
+  const agentId = agentRes.rows[0].id;
+
+  if (Array.isArray(AGENT.permissions) && AGENT.permissions.length) {
+    // map permission codes -> ids and upsert into role_permissions
+    // Using a single query for performance
+    await client.query(
+      `INSERT INTO public.role_permissions (role_id, permission_id)
+       SELECT $1, p.id FROM public.permissions p WHERE p.code = ANY($2::text[]) ON CONFLICT DO NOTHING;`,
+      [agentId, AGENT.permissions]
+    );
+  }
 
   // After seeding, attempt to re-add the roles_name_allowed_chk constraint only if all names are valid
   await client.query(`
     DO $$
     BEGIN
-      IF NOT EXISTS (SELECT 1 FROM public.roles WHERE name NOT IN ('Admin','HelpDeskManager','Agent','EndUser')) THEN
-        ALTER TABLE public.roles ADD CONSTRAINT roles_name_allowed_chk CHECK (name IN ('Admin','HelpDeskManager','Agent','EndUser'));
+      IF NOT EXISTS (SELECT 1 FROM public.roles WHERE name NOT IN ('Admin','HelpDeskManager','Agent','EndUser','Superuser')) THEN
+        ALTER TABLE public.roles ADD CONSTRAINT roles_name_allowed_chk CHECK (name IN ('Admin','HelpDeskManager','Agent','EndUser','Superuser'));
       END IF;
     END$$;
   `);
@@ -179,14 +198,14 @@ async function main() {
     userId = ins.rows[0].id;
   }
 
-  // bind role
+  // bind superuser role to admin
   await client.query(
     `INSERT INTO public.user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-    [userId, roleId]
+    [userId, superId]
   );
 
   await client.end();
-  console.log("\n✅ Permissions + Superuser seeded successfully");
+  console.log("\n✅ Permissions + Superuser + Agent role seeded successfully");
 }
 
 main().catch((err) => {

@@ -5,6 +5,7 @@ import { parsePagination } from "../../../utils/pagination.js";
 import { requireAnyPermission } from "../../../middleware/auth.js";
 import { PERMISSIONS } from "../../../constants/permissions.js";
 import { NotFound, BadRequest } from "../../../utils/errors.js";
+import { listDetailed, readDetailed } from "../../../utils/relations.js";
 const r = Router();
 const table = "tickets",
   idCol = "id";
@@ -118,72 +119,28 @@ r.get(
       }
       const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
       const order = safeSort(req.query.sort);
+
       const { rows: totalRows } = await pool.query(
         `SELECT count(*)::int AS c FROM ${table} ${whereSql}`,
         params
       );
       const total = totalRows[0]?.c || 0;
 
-      // --- dynamic nested relations builder ---
-      const relations = {
-        reporter_user: { alias: 'u', table: 'users', on: 't.reporter_user_id = u.id', defaults: ['id','email','full_name'], allowed: ['id','email','full_name'] },
-        assigned_agent: { alias: 'au', table: 'users', on: 't.assigned_agent_id = au.id', defaults: ['id','email','full_name'], allowed: ['id','email','full_name'] },
-        system: { alias: 's', table: 'systems', on: 't.system_id = s.id', defaults: ['id','name','code'], allowed: ['id','name','code','description'] },
-        module: { alias: 'sm', table: 'system_modules', on: 't.module_id = sm.id', defaults: ['id','name'], allowed: ['id','name','code','description'] },
-        category: { alias: 'ic', table: 'issue_categories', on: 't.category_id = ic.id', defaults: ['id','name'], allowed: ['id','name','code','description'] },
-        status: { alias: 'st', table: 'statuses', on: 't.status_id = st.id', defaults: ['id','name','code'], allowed: ['id','name','code'] },
-        priority: { alias: 'p', table: 'priorities', on: 't.priority_id = p.id', defaults: ['id','name','code'], allowed: ['id','name','code'] },
-        severity: { alias: 'sv', table: 'severities', on: 't.severity_id = sv.id', defaults: ['id','name','code'], allowed: ['id','name','code'] },
-        source: { alias: 'src', table: 'sources', on: 't.source_id = src.id', defaults: ['id','name','code'], allowed: ['id','name','code'] },
-        group: { alias: 'agp', table: 'agent_groups', on: 't.group_id = agp.id', defaults: ['id','name'], allowed: ['id','name','code'] },
-        tier: { alias: 'at', table: 'agent_tiers', on: 't.tier_id = at.id', defaults: ['id','name'], allowed: ['id','name','code'] }
-      };
-
-      // Check which related tables actually exist in the current DB schema to avoid SQL errors
-      const relTables = Array.from(new Set(Object.values(relations).map(r=>r.table)));
-      const { rows: present } = await pool.query(
-        `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name = ANY($1)`,
-        [relTables]
-      );
-      const presentSet = new Set((present || []).map(r=>r.table_name));
-
-      // helper: parse attrs from query param 'with_attrs_<relation>' as comma-separated list
-      function parseAttrs(rel){
-        const keyName = `with_attrs_${rel}`;
-        const raw = req.query[keyName] || (req.query.with_attrs && req.query.with_attrs[rel]) || null;
-        if (!raw) return null;
-        const parts = String(raw).split(',').map(s=>s.trim()).filter(Boolean);
-        return parts.length ? parts : null;
-      }
-
-      const selectParts = ['t.*'];
-      const joinParts = [];
-      for (const [name, info] of Object.entries(relations)){
-        const requested = parseAttrs(name);
-        const attrs = requested ? requested.filter(a=>info.allowed.includes(a)) : info.defaults;
-        const pairs = [];
-        for (const a of attrs){
-          pairs.push(`'${a}', ${info.alias}.${a}`);
-        }
-        if (!pairs.length) pairs.push("'id', " + info.alias + ".id");
-        if (presentSet.has(info.table)){
-          selectParts.push(`jsonb_build_object(${pairs.join(', ')}) AS ${name}`);
-          joinParts.push(`LEFT JOIN ${info.table} ${info.alias} ON ${info.on}`);
-        } else {
-          selectParts.push(`NULL::jsonb AS ${name}`);
-        }
-      }
-      // Include attachments count in list view
-      selectParts.push(`(
+      const extraSelects = [
+        `(
         SELECT count(*)::int FROM ticket_attachments ta WHERE ta.ticket_id = t.id
-      ) AS attachments_count`);
+      ) AS attachments_count`,
+      ];
 
-      const finalSql = `SELECT ${selectParts.join(', ')} FROM ${table} t ${joinParts.join(' ')} ${whereSql} ORDER BY ${order} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-      const { rows } = await pool.query(finalSql, [...params, limit, offset]);
-      const fields = req.query.fields || null;
-      const items = fields
-        ? rows.map((row) => pickFieldsDeep(row, fields))
-        : rows;
+      const rows = await listDetailed(table, req, order, {
+        whereSql,
+        params,
+        limit,
+        offset,
+        extraSelects,
+      });
+
+      const items = rows; // listDetailed already applies fields if provided
       res.json({ items, page, pageSize, total });
     } catch (e) {
       next(e);
@@ -208,53 +165,15 @@ r.get(
   requireAnyPermission(PERMISSIONS.TICKETS_READ, PERMISSIONS.TICKETS_MANAGE),
   async (req, res, next) => {
     try {
-      const enriched = await import('../../../utils/relations.js').then(m=>m.readDetailed).then(fn=>fn(table, idCol, req.params.id, req)).catch(()=>null);
-      let baseRow = null;
-      if (enriched) {
-        baseRow = enriched;
-      } else {
-        const row = await read(table, idCol, req.params.id);
-        if (!row) return next(NotFound("Ticket not found"));
-        const { rows: singleRows } = await pool.query(
-          `SELECT t.*, 
-             jsonb_build_object('id', u.id, 'email', u.email, 'full_name', u.full_name) AS reporter_user,
-             jsonb_build_object('id', au.id, 'email', au.email, 'full_name', au.full_name) AS assigned_agent,
-             jsonb_build_object('id', s.id, 'name', s.name, 'code', s.code) AS system,
-             jsonb_build_object('id', sm.id, 'name', sm.name) AS module,
-             jsonb_build_object('id', ic.id, 'name', ic.name) AS category,
-             jsonb_build_object('id', st.id, 'name', st.name, 'code', st.code) AS status,
-             jsonb_build_object('id', p.id, 'name', p.name, 'code', p.code) AS priority,
-             jsonb_build_object('id', sv.id, 'name', sv.name, 'code', sv.code) AS severity,
-             jsonb_build_object('id', src.id, 'name', src.name, 'code', src.code) AS source,
-             jsonb_build_object('id', agp.id, 'name', agp.name) AS "group",
-             jsonb_build_object('id', at.id, 'name', at.name) AS tier,
-             (
-               SELECT count(*)::int FROM ticket_attachments ta WHERE ta.ticket_id = t.id
-             ) AS attachments_count
-           FROM ${table} t
-           LEFT JOIN users u ON t.reporter_user_id = u.id
-           LEFT JOIN users au ON t.assigned_agent_id = au.id
-           LEFT JOIN systems s ON t.system_id = s.id
-           LEFT JOIN system_modules sm ON t.module_id = sm.id
-           LEFT JOIN issue_categories ic ON t.category_id = ic.id
-           LEFT JOIN statuses st ON t.status_id = st.id
-           LEFT JOIN priorities p ON t.priority_id = p.id
-           LEFT JOIN severities sv ON t.severity_id = sv.id
-           LEFT JOIN sources src ON t.source_id = src.id
-           LEFT JOIN agent_groups agp ON t.group_id = agp.id
-           LEFT JOIN agent_tiers at ON t.tier_id = at.id
-           WHERE t.id = $1 LIMIT 1`,
-          [req.params.id]
-        );
-        baseRow = singleRows[0] || row;
-      }
+      const baseRow = await readDetailed(table, idCol, req.params.id, req);
+      if (!baseRow) return next(NotFound("Ticket not found"));
       // Fetch attachments and attach to response
       const { rows: atts } = await pool.query(
         `SELECT id, ticket_id, file_name, file_type, file_size_bytes, storage_path, uploaded_by, uploaded_at
          FROM ticket_attachments WHERE ticket_id = $1 ORDER BY uploaded_at DESC`,
         [req.params.id]
       );
-      const result = { ...baseRow, attachments: atts };
+      const result = { ...baseRow, attachments_count: atts.length, attachments: atts };
       const fields = req.query.fields || null;
       const payload = fields ? pickFieldsDeep(result, fields) : result;
       res.json(payload);
@@ -480,10 +399,22 @@ r.get(
   ),
   async (req, res, next) => {
     try {
-      const { rows } = await pool.query(
-        `SELECT * FROM ticket_notes WHERE ticket_id=$1 ORDER BY created_at DESC`,
-        [req.params.id]
-      );
+      const { limit, offset } = parsePagination(req.query);
+      const where = [`t.ticket_id = $1`];
+      const params = [req.params.id];
+      if (req.query.is_internal != null) {
+        params.push(req.query.is_internal === 'true');
+        where.push(`t.is_internal = $${params.length}`);
+      }
+      if (req.query.q) {
+        params.push(`%${String(req.query.q).toLowerCase()}%`);
+        where.push(`lower(t.body) LIKE $${params.length}`);
+      }
+      const whereSql = `WHERE ${where.join(' AND ')}`;
+      const order = 'created_at DESC';
+      const { rows: ct } = await pool.query(`SELECT count(*)::int AS c FROM ticket_notes t ${whereSql}`,[...params]);
+      res.set('X-Total-Count', String(ct[0]?.c || 0));
+      const rows = await import('../../../utils/relations.js').then(m=>m.listDetailed).then(fn=>fn('ticket_notes', req, order, { whereSql, params, limit, offset }));
       res.json(rows);
     } catch (e) {
       next(e);
@@ -525,10 +456,15 @@ r.get(
   ),
   async (req, res, next) => {
     try {
-      const { rows } = await pool.query(
-        `SELECT * FROM ticket_watchers WHERE ticket_id=$1 ORDER BY id DESC`,
-        [req.params.id]
-      );
+      const { limit, offset } = parsePagination(req.query);
+      const where = [`t.ticket_id = $1`];
+      const params = [req.params.id];
+      if (req.query.notify != null) { params.push(req.query.notify === 'true'); where.push(`t.notify = $${params.length}`); }
+      const whereSql = `WHERE ${where.join(' AND ')}`;
+      const order = 'id DESC';
+      const { rows: ct } = await pool.query(`SELECT count(*)::int AS c FROM ticket_watchers t ${whereSql}`,[...params]);
+      res.set('X-Total-Count', String(ct[0]?.c || 0));
+      const rows = await import('../../../utils/relations.js').then(m=>m.listDetailed).then(fn=>fn('ticket_watchers', req, order, { whereSql, params, limit, offset }));
       res.json(rows);
     } catch (e) {
       next(e);
@@ -586,10 +522,16 @@ r.get(
   ),
   async (req, res, next) => {
     try {
-      const { rows } = await pool.query(
-        `SELECT * FROM ticket_attachments WHERE ticket_id=$1 ORDER BY uploaded_at DESC`,
-        [req.params.id]
-      );
+      const { limit, offset } = parsePagination(req.query);
+      const where = [`t.ticket_id = $1`];
+      const params = [req.params.id];
+      if (req.query.file_type) { params.push(req.query.file_type); where.push(`t.file_type = $${params.length}`); }
+      if (req.query.q) { params.push(`%${String(req.query.q).toLowerCase()}%`); where.push(`lower(t.file_name) LIKE $${params.length}`); }
+      const whereSql = `WHERE ${where.join(' AND ')}`;
+      const order = 'uploaded_at DESC';
+      const { rows: ct } = await pool.query(`SELECT count(*)::int AS c FROM ticket_attachments t ${whereSql}`,[...params]);
+      res.set('X-Total-Count', String(ct[0]?.c || 0));
+      const rows = await import('../../../utils/relations.js').then(m=>m.listDetailed).then(fn=>fn('ticket_attachments', req, order, { whereSql, params, limit, offset }));
       res.json(rows);
     } catch (e) {
       next(e);
@@ -638,10 +580,15 @@ r.get(
   ),
   async (req, res, next) => {
     try {
-      const { rows } = await pool.query(
-        `SELECT * FROM ticket_events WHERE ticket_id=$1 ORDER BY occurred_at DESC`,
-        [req.params.id]
-      );
+      const { limit, offset } = parsePagination(req.query);
+      const where = [`t.ticket_id = $1`];
+      const params = [req.params.id];
+      if (req.query.event_type) { params.push(req.query.event_type); where.push(`t.event_type = $${params.length}`); }
+      const whereSql = `WHERE ${where.join(' AND ')}`;
+      const order = 'occurred_at DESC';
+      const { rows: ct } = await pool.query(`SELECT count(*)::int AS c FROM ticket_events t ${whereSql}`,[...params]);
+      res.set('X-Total-Count', String(ct[0]?.c || 0));
+      const rows = await import('../../../utils/relations.js').then(m=>m.listDetailed).then(fn=>fn('ticket_events', req, order, { whereSql, params, limit, offset }));
       res.json(rows);
     } catch (e) {
       next(e);

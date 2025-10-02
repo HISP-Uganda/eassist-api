@@ -23,6 +23,8 @@ Production-grade Express + PostgreSQL API for the eAssist Helpdesk platform.
 - OpenAPI docs
 - Scripts (maintenance and dev)
 - Troubleshooting
+- Attribution
+- License
 
 ---
 
@@ -44,7 +46,7 @@ node scripts/run-migrations.js
 node scripts/seed-permissions-and-superuser.js
 node scripts/seed-initial.js
 
-# 5) Start the API (default :8080)
+# 5) Start the API (fixed :8080 for local testing)
 npm start
 # or live reload
 npm run dev
@@ -109,11 +111,16 @@ node scripts/seed-initial.js
 ## Run the API
 
 ```bash
-# Development
+# Development (auto-reload) — binds to :8080
 npm run dev
 
-# Production
+# Production-like — binds to :8080
 npm start
+
+# Port helper commands (macOS):
+# kill any process bound to :8080, then start
+npm run stop:8080
+npm run restart:8080
 ```
 
 - Base API path: `/api`
@@ -135,7 +142,8 @@ RBAC is enforced by route-level permission checks. See `src/constants/permission
 
 ## Public endpoints
 
-Lookups are public for GET:
+Lookups are public for GET (no authentication required). Writes remain protected by permissions.
+
 - `/api/system/lookups/statuses`
 - `/api/system/lookups/priorities`
 - `/api/system/lookups/severities`
@@ -144,6 +152,9 @@ Lookups are public for GET:
 - `/api/system/lookups/system-modules`
 - `/api/system/lookups/issue-categories`
 - `/api/system/lookups/system-category`
+- `/api/system/lookups/support-tiers` (alias of agent tiers)
+- `/api/system/lookups/support-groups` (alias of agent groups)
+- `/api/system/lookups/video-categories`
 
 Public tickets helpers (optional):
 - `/api/public/tickets` (create)
@@ -254,9 +265,17 @@ Output is written to `src/docs/openapi.json`.
   - Ensure you send valid auth (Bearer token, Basic auth, or API key) and that the user has the required permissions for that route.
 - Migration errors:
   - Check the DB URL in `.env` and confirm your DB user has privileges to run DDL.
+- Port already in use:
+  - Use `npm run stop:8080` then `npm start` to restart on port 8080.
+
+---
+
+## Attribution
+
+This eAssist API is developed and maintained by HISP Uganda.
 
 ---
 
 ## License
 
-Copyright © HISP Uganda.
+Copyright © Ministry of Health, Uganda.

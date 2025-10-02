@@ -4,6 +4,8 @@ import { requireAnyPermission } from "../../../middleware/auth.js";
 import { PERMISSIONS } from "../../../constants/permissions.js";
 import { NotFound } from "../../../utils/errors.js";
 import { listDetailed, readDetailed } from "../../../utils/relations.js";
+import { parsePagination } from "../../../utils/pagination.js";
+import pool from "../../../db/pool.js";
 const r = Router();
 const t = "ticket_attachments";
 
@@ -15,8 +17,22 @@ r.get(
   ),
   async (req, res, next) => {
     try {
-      // Use central helper which will include user nested object when available
-      const rows = await listDetailed(t, req, 'uploaded_at DESC');
+      const { limit, offset } = parsePagination(req.query);
+      const where = [];
+      const params = [];
+      if (req.query.ticket_id) { params.push(req.query.ticket_id); where.push(`t.ticket_id = $${params.length}`); }
+      if (req.query.uploaded_by) { params.push(req.query.uploaded_by); where.push(`t.uploaded_by = $${params.length}`); }
+      if (req.query.file_type) { params.push(req.query.file_type); where.push(`t.file_type = $${params.length}`); }
+      if (req.query.q) { params.push(`%${String(req.query.q).toLowerCase()}%`); where.push(`lower(t.file_name) LIKE $${params.length}`); }
+      if (req.query.uploaded_from) { params.push(req.query.uploaded_from); where.push(`t.uploaded_at >= $${params.length}`); }
+      if (req.query.uploaded_to) { params.push(req.query.uploaded_to); where.push(`t.uploaded_at <= $${params.length}`); }
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const order = 'uploaded_at DESC';
+
+      const { rows: ct } = await pool.query(`SELECT count(*)::int AS c FROM ${t} t ${whereSql}`, params);
+      res.set('X-Total-Count', String(ct[0]?.c || 0));
+
+      const rows = await listDetailed(t, req, order, { whereSql, params, limit, offset });
       res.json(rows);
     } catch (e) {
       next(e);

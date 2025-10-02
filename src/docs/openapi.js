@@ -40,12 +40,19 @@ function isNoAuthPath(path) {
   if (path.startsWith("/api/public")) return true;
   if (path === "/api/info" || path === "/api/resources") return true;
   if (path === "/api/docs.json" || path.startsWith("/api/docs")) return true;
-  // NEW: lookups are public for GET
+  // Lookups are public for GET
   if (path.startsWith("/api/system/lookups")) return true;
-  if (path.startsWith("/api/auth/")) {
-    // whoami remains protected
-    return !path.startsWith("/api/auth/whoami");
+  // Auth routes: explicitly list public ones; others require auth
+  if (
+    path === "/api/auth/login" ||
+    path === "/api/auth/refresh" ||
+    path === "/api/auth/logout" ||
+    path === "/api/auth/request-password-reset" ||
+    path === "/api/auth/reset-password"
+  ) {
+    return true;
   }
+  if (path.startsWith("/api/auth/")) return false; // e.g., /api/auth/me, /api/auth/whoami
   return false;
 }
 
@@ -87,423 +94,7 @@ function fieldsParam() {
 }
 
 // Manual overrides per path+method (add/merge params, requestBody)
-const OVERRIDES = {
-  "/api/public/tickets/lookup": {
-    get: {
-      parameters: [
-        {
-          name: "reference",
-          in: "query",
-          required: true,
-          schema: { type: "string" },
-          description:
-            "Ticket reference/key (e.g., HD-2025-0002). Aliases: ref, key",
-        },
-      ],
-      responses: {
-        200: {
-          description: "Minimal ticket status payload",
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  reference: { type: "string" },
-                  title: { type: "string" },
-                  status: {
-                    type: "object",
-                    properties: {
-                      code: { type: "string" },
-                      name: { type: "string" },
-                    },
-                  },
-                  priority: { type: "string", nullable: true },
-                  severity: { type: "string", nullable: true },
-                  created_at: { type: "string", format: "date-time" },
-                  updated_at: { type: "string", format: "date-time" },
-                },
-              },
-              examples: {
-                sample: {
-                  value: {
-                    reference: "HD-2025-0002",
-                    title: "Printer jam",
-                    status: { code: "open", name: "Open" },
-                    priority: "medium",
-                    severity: "minor",
-                    created_at: "2025-09-23T09:00:00Z",
-                    updated_at: "2025-09-23T10:15:00Z",
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-  "/api/public/tickets": {
-    post: {
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: {
-              type: "object",
-              required: ["title", "description"],
-              additionalProperties: true,
-              properties: {
-                title: { type: "string" },
-                description: { type: "string" },
-                reporter_email: { type: "string", format: "email", nullable: true },
-                full_name: { type: "string", nullable: true },
-                phone_number: { type: "string", nullable: true },
-                system_id: { type: "integer", nullable: true },
-                module_id: { type: "integer", nullable: true },
-                category_id: { type: "integer", nullable: true },
-                priority_id: { type: "integer", nullable: true },
-                severity_id: { type: "integer", nullable: true },
-                source_id: { type: "integer", nullable: true },
-              },
-            },
-            example: {
-              title: "Printer jam",
-              description: "Keeps jamming after 3 pages",
-              reporter_email: "user@example.com",
-              full_name: "Jane Doe",
-              phone_number: "+256770000000",
-            },
-          },
-        },
-      },
-    },
-  },
-  "/api/tickets": {
-    get: {
-      responses: {
-        200: {
-          description: "Paginated tickets list",
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  items: { type: "array", items: { type: "object" } },
-                  page: { type: "integer" },
-                  pageSize: { type: "integer" },
-                  total: { type: "integer" },
-                },
-              },
-              examples: {
-                sample: {
-                  value: {
-                    items: [
-                      {
-                        id: "100",
-                        ticket_key: "HD-2025-0001",
-                        title: "VPN down",
-                        status_id: 1,
-                      },
-                      {
-                        id: "101",
-                        ticket_key: "HD-2025-0002",
-                        title: "Printer jam",
-                        status_id: 2,
-                      },
-                    ],
-                    page: 1,
-                    pageSize: 25,
-                    total: 2,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    post: {
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: {
-              type: "object",
-              required: ["title", "description"],
-              properties: {
-                title: { type: "string" },
-                description: { type: "string" },
-                reporter_user_id: { type: "string", nullable: true },
-                reporter_email: { type: "string", format: "email", nullable: true },
-                full_name: { type: "string", nullable: true },
-                phone_number: { type: "string", nullable: true },
-                system_id: { type: "integer", nullable: true },
-                module_id: { type: "integer", nullable: true },
-                category_id: { type: "integer", nullable: true },
-                priority_id: { type: "integer", nullable: true },
-                severity_id: { type: "integer", nullable: true },
-                source_id: { type: "integer", nullable: true },
-              },
-              additionalProperties: true,
-            },
-            example: {
-              title: "VPN down",
-              description: "Cannot connect",
-              reporter_email: "staff@org.test",
-              full_name: "John Doe",
-              phone_number: "+256780000000",
-            },
-          },
-        },
-      },
-    },
-  },
-  "/api/tickets/:id": {
-    get: {
-      responses: {
-        200: {
-          description: "Ticket by id",
-          content: {
-            "application/json": {
-              schema: { type: "object" },
-              examples: {
-                sample: {
-                  value: {
-                    id: "100",
-                    ticket_key: "HD-2025-0001",
-                    title: "VPN down",
-                    description: "Cannot connect",
-                    status_id: 1,
-                    priority_id: 2,
-                    severity_id: 1,
-                  },
-                },
-              },
-            },
-          },
-        },
-        404: {
-          description: "Ticket not found",
-        },
-      },
-    },
-  },
-  "/api/auth/login": {
-    post: {
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: {
-              type: "object",
-              required: ["email", "password"],
-              additionalProperties: false,
-              properties: {
-                email: { type: "string", format: "email" },
-                password: { type: "string" },
-              },
-            },
-            example: { email: "admin@eassist.local", password: "••••••" },
-          },
-        },
-      },
-      responses: {
-        200: {
-          description: "Login successful",
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/AuthLoginResponse" },
-              examples: {
-                sample: {
-                  value: {
-                    access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                    refresh_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                    user: {
-                      id: "u_1",
-                      email: "admin@eassist.local",
-                      full_name: "Admin",
-                      roles: ["admin"],
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-  "/api/auth/refresh": {
-    post: {
-      responses: {
-        200: {
-          description: "New access token",
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/AuthAccessToken" },
-              examples: {
-                sample: {
-                  value: {
-                    access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-  "/api/auth/logout": {
-    post: {
-      responses: {
-        200: {
-          description: "Logged out",
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["ok"],
-                properties: { ok: { type: "boolean", example: true } },
-              },
-              examples: { sample: { value: { ok: true } } },
-            },
-          },
-        },
-      },
-    },
-  },
-  "/api/tokens/api-keys/:id/rotate": {
-    post: {
-      responses: {
-        200: {
-          description: "API key rotated (plaintext returned once)",
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/ApiKeyWithSecret" },
-              examples: {
-                rotated: {
-                  value: {
-                    id: "2",
-                    name: "Zapier",
-                    scope: "integrations",
-                    is_active: true,
-                    updated_at: "2025-09-23T10:10:00Z",
-                    prefix: "NewPrefx",
-                    api_key: "sk_live_newsecret",
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-  // Tickets attachments
-  "/api/tickets/attachments": {
-    get: {
-      responses: {
-        200: {
-          description: "List ticket attachments",
-          content: {
-            "application/json": {
-              schema: {
-                type: "array",
-                items: { $ref: "#/components/schemas/TicketAttachment" },
-              },
-              examples: {
-                sample: {
-                  value: [
-                    {
-                      id: "a1",
-                      ticket_id: "100",
-                      file_name: "log.txt",
-                      file_type: "text/plain",
-                      file_size_bytes: 1234,
-                      storage_path: "/files/100/a1.log",
-                      uploaded_by: "u_1",
-                      uploaded_at: "2025-09-23T09:00:00Z",
-                    },
-                  ],
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    post: {
-      responses: {
-        201: {
-          description: "Attachment created",
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/TicketAttachment" },
-              examples: {
-                sample: {
-                  value: {
-                    id: "a2",
-                    ticket_id: "100",
-                    file_name: "screenshot.png",
-                    file_type: "image/png",
-                    file_size_bytes: 204800,
-                    storage_path: "/files/100/a2.png",
-                    uploaded_by: "u_1",
-                    uploaded_at: "2025-09-23T10:00:00Z",
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-  "/api/tickets/attachments/:id": {
-    get: {
-      responses: {
-        200: {
-          description: "Attachment by id",
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/TicketAttachment" },
-            },
-          },
-        },
-        404: { description: "Attachment not found" },
-      },
-    },
-    put: {
-      responses: {
-        200: {
-          description: "Attachment updated",
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/TicketAttachment" },
-            },
-          },
-        },
-      },
-    },
-    delete: {
-      responses: {
-        200: {
-          description: "Attachment deleted",
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["ok"],
-                properties: { ok: { type: "boolean", example: true } },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-};
+const OVERRIDES = {};
 
 function mergeOverride(op, path, method) {
   const byPath = OVERRIDES[path];
@@ -827,6 +418,29 @@ export default function buildOpenApi(app) {
           created_at: { type: "string", format: "date-time" },
         },
       },
+      TicketEvent: {
+        type: "object",
+        required: ["id", "ticket_id", "event_type"],
+        properties: {
+          id: { type: "string" },
+          ticket_id: { type: "string" },
+          event_type: { type: "string" },
+          actor_user_id: { type: "string", nullable: true },
+          details: { type: "object", additionalProperties: true, nullable: true },
+          occurred_at: { type: "string", format: "date-time" }
+        }
+      },
+      TicketWatcher: {
+        type: "object",
+        required: ["id", "ticket_id"],
+        properties: {
+          id: { type: "string" },
+          ticket_id: { type: "string" },
+          user_id: { type: "string", nullable: true },
+          email: { type: "string", format: "email", nullable: true },
+          notify: { type: "boolean" }
+        }
+      },
       Ticket: {
         type: "object",
         required: ["id", "ticket_key", "title"],
@@ -857,6 +471,18 @@ export default function buildOpenApi(app) {
           updated_at: { type: "string", format: "date-time", nullable: true },
           attachments_count: { type: "integer", nullable: true },
           attachments: { type: "array", items: { $ref: "#/components/schemas/TicketAttachment" } },
+          // Example nested objects when using listDetailed/readDetailed
+          reporter_user: { type: "object", nullable: true, additionalProperties: true },
+          assigned_agent: { type: "object", nullable: true, additionalProperties: true },
+          system: { type: "object", nullable: true, additionalProperties: true },
+          module: { type: "object", nullable: true, additionalProperties: true },
+          category: { type: "object", nullable: true, additionalProperties: true },
+          status: { type: "object", nullable: true, additionalProperties: true },
+          priority: { type: "object", nullable: true, additionalProperties: true },
+          severity: { type: "object", nullable: true, additionalProperties: true },
+          source: { type: "object", nullable: true, additionalProperties: true },
+          group: { type: "object", nullable: true, additionalProperties: true },
+          tier: { type: "object", nullable: true, additionalProperties: true }
         },
       },
       TicketList: {
@@ -992,8 +618,6 @@ export default function buildOpenApi(app) {
       op = mergeOverride(op, e.path, method);
 
       // Ensure every operation explicitly documents whether a request payload is expected
-      // Write operations already get a requestBody above; for others provide an explicit
-      // non-required placeholder so the OpenAPI output always shows payload: required = true/false
       if (!op.requestBody) {
         op.requestBody = { required: false };
       }
@@ -1181,6 +805,8 @@ export default function buildOpenApi(app) {
         "Use /api/auth/login to obtain tokens, /api/resources to list endpoints, and /api/info for diagnostics.",
         "",
         "Errors are documented inline per operation, extending ErrorResponseBase with endpoint-appropriate details and example messages.",
+        "",
+        "Developed and maintained by HISP Uganda.",
       ].join("\n"),
     },
     servers: [

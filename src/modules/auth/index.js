@@ -133,13 +133,76 @@ r.post("/logout", async (req, res, next) => {
 });
 
 // GET /api/auth/me
-r.get("/me", async (req, res) => {
-  res.json({ ok: true });
+r.get("/me", requireAuth, async (req, res, next) => {
+  try {
+    const sub = String(req.user?.sub || "");
+    // If caller is an API key, return limited principal info
+    if (sub.startsWith("api-key:")) {
+      return res.json({
+        ok: true,
+        user: null,
+        api_key: req.user.api_key || null,
+        roles: req.user.roles || ["ApiKey"],
+      });
+    }
+    const userId = sub;
+    const q = await pool.query(
+      "SELECT id, email, full_name FROM users WHERE id=$1",
+      [userId]
+    );
+    const u = q.rows[0] || null;
+    const roles =
+      Array.isArray(req.user?.roles) && req.user.roles.length
+        ? req.user.roles
+        : await getUserRoles(userId);
+    if (!u)
+      return res.status(404).json({
+        ok: false,
+        error: { code: "NOT_FOUND", message: "User not found" },
+      });
+    res.json({
+      ok: true,
+      user: { id: u.id, email: u.email, full_name: u.full_name, roles },
+    });
+  } catch (e) {
+    next(e);
+  }
 });
 
 // GET /api/auth/whoami (protected)
-r.get("/whoami", requireAuth, (req, res) => {
-  res.json({ ok: true, user: req.user });
+r.get("/whoami", requireAuth, async (req, res, next) => {
+  try {
+    const sub = String(req.user?.sub || "");
+    if (sub.startsWith("api-key:")) {
+      return res.json({
+        ok: true,
+        user: null,
+        api_key: req.user.api_key || null,
+        roles: req.user.roles || ["ApiKey"],
+      });
+    }
+    const userId = sub;
+    const q = await pool.query(
+      "SELECT id, email, full_name FROM users WHERE id=$1",
+      [userId]
+    );
+    const u = q.rows[0] || null;
+    const roles =
+      Array.isArray(req.user?.roles) && req.user.roles.length
+        ? req.user.roles
+        : await getUserRoles(userId);
+    if (!u)
+      return res.status(404).json({
+        ok: false,
+        error: { code: "NOT_FOUND", message: "User not found" },
+      });
+    res.json({
+      ok: true,
+      user: { id: u.id, email: u.email, full_name: u.full_name, roles },
+    });
+  } catch (e) {
+    next(e);
+  }
 });
 
 // POST /api/auth/request-password-reset {email}

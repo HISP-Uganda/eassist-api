@@ -4,6 +4,7 @@ import pool from "../../../db/pool.js";
 import { listDetailed, readDetailed } from "../../../utils/relations.js";
 import { requireAnyPermission } from "../../../middleware/auth.js";
 import { PERMISSIONS } from "../../../constants/permissions.js";
+import { parsePagination } from "../../../utils/pagination.js";
 const r = Router();
 const table = "ticket_watchers";
 const allow = ["ticket_id", "user_id", "email", "notify"];
@@ -16,7 +17,21 @@ r.get(
   ),
   async (req, res, next) => {
     try {
-      res.json(await listDetailed(table, req));
+      const { limit, offset } = parsePagination(req.query);
+      const where = [];
+      const params = [];
+      if (req.query.ticket_id) { params.push(req.query.ticket_id); where.push(`t.ticket_id = $${params.length}`); }
+      if (req.query.user_id) { params.push(req.query.user_id); where.push(`t.user_id = $${params.length}`); }
+      if (req.query.email) { params.push(req.query.email.toLowerCase()); where.push(`lower(t.email) = $${params.length}`); }
+      if (req.query.notify != null) { params.push(req.query.notify === 'true'); where.push(`t.notify = $${params.length}`); }
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const order = 'id DESC';
+
+      const { rows: ct } = await pool.query(`SELECT count(*)::int AS c FROM ${table} t ${whereSql}`, params);
+      res.set('X-Total-Count', String(ct[0]?.c || 0));
+
+      const rows = await listDetailed(table, req, order, { whereSql, params, limit, offset });
+      res.json(rows);
     } catch (e) {
       next(e);
     }

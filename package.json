@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
+    "dev": "PORT=8080 nodemon src/server.js",
+    "start": "PORT=8080 node src/server.js",
+    "stop:8080": "lsof -ti tcp:8080 | xargs kill -9 || true",
+    "restart:8080": "npm run stop:8080 && npm start",
     "db:create": "node scripts/db-create.js",
     "migrate:init": "node scripts/run-sql.js db/init.sql",
     "migrate": "node scripts/run-migrations.js",

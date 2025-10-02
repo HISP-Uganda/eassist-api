@@ -603,11 +603,36 @@ export function isPermission(name) {
   return ALL_PERMISSIONS.includes(v);
 }
 
+// Default roles blueprint used by seeding scripts
 export const DEFAULT_ROLES = Object.freeze({
-  SUPERUSER: Object.freeze({
-    code: "role.superuser",
-    name: "Superuser",
-    description: "Full platform access to all features and endpoints.",
-    permissions: ALL_PERMISSIONS,
-  }),
+  SUPERUSER: { code: 'superuser', name: 'Superuser', description: 'Full access to all features' },
+  AGENT: {
+    code: 'agent',
+    name: 'Agent',
+    description: 'Support agent with core ticket handling capabilities',
+    permissions: [
+      // Tickets: core lifecycle and collaboration
+      PERMISSIONS.TICKETS_LIST,
+      PERMISSIONS.TICKETS_READ,
+      PERMISSIONS.TICKETS_CREATE,
+      PERMISSIONS.TICKETS_UPDATE,
+      PERMISSIONS.TICKETS_ASSIGN,
+      PERMISSIONS.TICKETS_RELEASE,
+      PERMISSIONS.TICKETS_CLAIM,
+      PERMISSIONS.TICKETS_UNCLAIM,
+      PERMISSIONS.TICKETS_STATUS_SET,
+      PERMISSIONS.TICKETS_PRIORITY_SET,
+      PERMISSIONS.TICKETS_SEVERITY_SET,
+      PERMISSIONS.TICKETS_CLOSE,
+      PERMISSIONS.TICKETS_REOPEN,
+      PERMISSIONS.TICKETS_NOTES_READ,
+      PERMISSIONS.TICKETS_NOTES_ADD,
+      PERMISSIONS.TICKETS_WATCHERS_READ,
+      PERMISSIONS.TICKETS_WATCHERS_ADD,
+      PERMISSIONS.TICKETS_WATCHERS_REMOVE,
+      PERMISSIONS.TICKETS_ATTACHMENTS_READ,
+      PERMISSIONS.TICKETS_ATTACHMENTS_ADD,
+      PERMISSIONS.TICKETS_EVENTS_READ,
+    ],
+  },
 });
