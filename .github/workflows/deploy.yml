@@ -57,9 +57,13 @@ jobs:
           echo "Target: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PORT} -> ${DEPLOY_PATH}" | sed 's/\(DEPLOY_HOST\|DEPLOY_USER\)/[masked]/g'
           echo "Run seeds input: ${RUN_SEEDS_INPUT}"
 
-      - name: Read version
+      - name: Read version (grep, no Node dependency)
         id: meta
-        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+        run: |
+          set -e
+          VERSION=$(grep -m1 '"version"' package.json | sed -E 's/.*"version" *: *"([^"]+)".*/\1/')
+          echo "Detected version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Prepare SSH key
         run: |
@@ -92,42 +96,53 @@ jobs:
           BUILD_LABEL: v${{ steps.meta.outputs.version }}+ci.${{ github.run_number }}
         run: |
           set -e
-          # Translate run seeds input to 1/0
           if [ "${RUN_SEEDS_INPUT}" = "true" ] || [ "${RUN_SEEDS_INPUT}" = "1" ]; then RUN_SEEDS=1; else RUN_SEEDS=0; fi
           echo "RUN_SEEDS=$RUN_SEEDS"
-          ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
-          set -e
-          echo "[Remote] Starting deploy at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          cd "$DEPLOY_PATH"
-          if [ ! -f package.json ]; then
-            echo "[Remote] ERROR: package.json missing in $DEPLOY_PATH" >&2; exit 1; fi
-          # Ensure node_modules exists (reuse) else install production deps
-          if [ ! -d node_modules ]; then
-            echo "[Remote] node_modules missing; installing production dependencies";
-            if command -v npm >/dev/null; then npm ci --only=production || npm install --production; fi
-          fi
-          echo "[Remote] Running migrations (npm run migrate:run || migrate)"
-          if command -v npm >/dev/null; then npm run migrate:run 2>/dev/null || npm run migrate || echo "[Remote] migrations step non-critical"; fi
-          if [ "$RUN_SEEDS" = "1" ]; then
-            echo "[Remote] Running seed scripts"
-            if command -v npm >/dev/null; then 
-              npm run seed:permissions-and-superuser 2>/dev/null || true
-              npm run seed:initial 2>/dev/null || true
-            fi
-          fi
-          echo "[Remote] Restarting service"
-          if [ -x bin/deploy.sh ]; then
-            echo "[Remote] Using bin/deploy.sh restart"
-            bin/deploy.sh restart || bin/deploy.sh || true
-          elif command -v pm2 >/dev/null; then
-            pm2 reload eassist-api || pm2 restart eassist-api || true
-          else
-            echo "[Remote] Falling back to manual restart"
-            pkill -f 'node src/server.js' 2>/dev/null || true
-            (nohup npm start >/dev/null 2>&1 &) || true
-          fi
-          echo "[Remote] Deployment finished"
-REMOTE_EOF
+          # Pass environment explicitly to remote shell
+          ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "DEPLOY_PATH='${DEPLOY_PATH}' RUN_SEEDS='${RUN_SEEDS}' BUILD_LABEL='${BUILD_LABEL}' GIT_SHA='${GIT_SHA}' bash -s" <<'EOF'
+set -e
+echo "[Remote] Starting deploy at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cd "$DEPLOY_PATH" || { echo "[Remote] ERROR: cannot cd to $DEPLOY_PATH" >&2; exit 1; }
+if [ ! -f package.json ]; then
+  echo "[Remote] ERROR: package.json missing in $DEPLOY_PATH" >&2; exit 1; fi
+# Ensure node_modules exists else install minimal prod deps
+if [ ! -d node_modules ]; then
+  echo "[Remote] node_modules missing; installing production dependencies";
+  if command -v npm >/dev/null; then npm ci --only=production || npm install --production; fi
+fi
+# Migrations
+if command -v npm >/dev/null; then
+  echo "[Remote] Running migrations";
+  npm run migrate:run 2>/dev/null || npm run migrate || echo "[Remote] migrations step non-critical";
+fi
+# Seeds
+if [ "$RUN_SEEDS" = "1" ]; then
+  echo "[Remote] Running seed scripts";
+  if command -v npm >/dev/null; then
+    npm run seed:permissions-and-superuser 2>/dev/null || true
+    npm run seed:initial 2>/dev/null || true
+  fi
+fi
+# Restart strategy preference: systemd > custom script > pm2 > manual
+if command -v systemctl >/dev/null && systemctl list-units --type=service | grep -q "eassist-api"; then
+  echo "[Remote] Restarting via systemctl"; systemctl restart eassist-api || echo "[Remote] systemctl restart failed";
+elif [ -x bin/deploy.sh ]; then
+  echo "[Remote] Using bin/deploy.sh restart"; bin/deploy.sh restart || bin/deploy.sh || true;
+elif command -v pm2 >/dev/null; then
+  echo "[Remote] Restarting via pm2"; pm2 reload eassist-api || pm2 restart eassist-api || true;
+else
+  echo "[Remote] Falling back to manual restart";
+  pkill -f 'node src/server.js' 2>/dev/null || true
+  (nohup npm start >/dev/null 2>&1 &) || true
+fi
+# Basic smoke test (non-fatal)
+if command -v curl >/dev/null; then
+  echo "[Remote] Smoke test attempt (http://localhost:8080/health)";
+  curl -fsS http://localhost:8080/health >/dev/null 2>&1 && echo "[Remote] Health endpoint OK" || echo "[Remote] Health endpoint not responding";
+fi
+echo "[Remote] Deployment finished (BUILD_LABEL=$BUILD_LABEL GIT_SHA=$GIT_SHA)"
+EOF
 
       - name: Summary
         run: |
