@@ -90,26 +90,54 @@ jobs:
 
           log "Stopping existing eassist-api service"
           STOPPED=0
-          # Try systemd first (only if gitdeploy has sudo permissions)
+          
+          # First, always try to kill any process on port 8080
+          if lsof -ti tcp:8080 >/dev/null 2>&1; then
+            log "Found process on port 8080, attempting to kill"
+            PIDS=$(lsof -ti tcp:8080)
+            echo "$PIDS" | xargs -r kill -15 2>/dev/null || true
+            sleep 2
+            # If still running, force kill
+            if lsof -ti tcp:8080 >/dev/null 2>&1; then
+              log "Process still running, force killing"
+              lsof -ti tcp:8080 | xargs -r kill -9 || true
+              sleep 2
+            fi
+            STOPPED=1
+            log "Process on port 8080 killed"
+          fi
+          
+          # Also try pkill as backup
+          if pkill -0 -f "node.*server.js" 2>/dev/null; then
+            log "Found node server.js process, killing"
+            pkill -15 -f "node.*server.js" 2>/dev/null || true
+            sleep 2
+            pkill -9 -f "node.*server.js" 2>/dev/null || true
+            sleep 1
+          fi
+          
+          # Try systemd if available (only if gitdeploy has sudo permissions)
           if command -v systemctl >/dev/null && systemctl list-units --type=service | grep -q "eassist-api" 2>/dev/null; then
             if sudo -n systemctl stop eassist-api 2>/dev/null; then
               STOPPED=1
               log "Service stopped via systemd."
-            else
-              log "Cannot use systemd without passwordless sudo; trying other methods."
             fi
           fi
-          # Try pm2
-          if [ "$STOPPED" -eq 0 ] && command -v pm2 >/dev/null; then
-            pm2 stop eassist-api 2>/dev/null && STOPPED=1 && log "Service stopped via pm2." || true
+          
+          # Try pm2 if available
+          if command -v pm2 >/dev/null; then
+            pm2 stop eassist-api 2>/dev/null || true
             pm2 delete eassist-api 2>/dev/null || true
           fi
-          # Kill any process on port 8080
+          
+          # Final verification that port is free
           if lsof -ti tcp:8080 >/dev/null 2>&1; then
-            log "Killing process on port 8080"
-            lsof -ti tcp:8080 | xargs -r kill -9 || pkill -9 -f "node.*server.js" || true
-            sleep 2
+            log "WARNING: Port 8080 still in use after stop attempts"
+            lsof -ti tcp:8080 | xargs -r kill -9 || true
+            sleep 3
           fi
+          
+          log "Port 8080 is now free"
 
           log "Starting the service"
           STARTED=0
