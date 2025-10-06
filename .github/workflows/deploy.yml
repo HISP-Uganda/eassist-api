@@ -15,7 +15,6 @@ on:
 permissions:
   contents: read
 
-# Prevent overlapping deploys
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -38,36 +37,40 @@ jobs:
       GIT_SHA: ${{ github.sha }}
       RUN_SEEDS_INPUT: ${{ github.event.inputs.runSeeds || 'false' }}
     steps:
-      - name: Checkout repository (v3)
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Validate environment & secrets
         run: |
-          set -e
-          echo "Branch ref: $GITHUB_REF"
+          set -euo pipefail
+          echo "Ref: $GITHUB_REF"
           if [ -z "${{ secrets.EASSIST_API_SRV }}" ]; then
-            echo '::error::Missing required secret: EASSIST_API_SRV' >&2
-            exit 1
-          fi
+            echo '::error::Missing required secret: EASSIST_API_SRV' >&2; exit 1; fi
           if [ ! -f package.json ]; then
-            echo '::error::package.json not found at repository root.' >&2
-            ls -al
-            exit 1
-          fi
-          echo "Target: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PORT} -> ${DEPLOY_PATH}" | sed 's/\(DEPLOY_HOST\|DEPLOY_USER\)/[masked]/g'
-          echo "Run seeds input: ${RUN_SEEDS_INPUT}"
+            echo '::error::package.json not found at repo root' >&2; ls -al; exit 1; fi
+          if [ ! -f package-lock.json ]; then
+            echo '::error::package-lock.json missing – commit your lockfile for reproducible deploys' >&2; exit 1; fi
+          echo 'Environment validation passed.'
 
-      - name: Read version (grep, no Node dependency)
+      - name: Setup Node 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Read version
         id: meta
-        run: |
-          set -e
-          VERSION=$(grep -m1 '"version"' package.json | sed -E 's/.*"version" *: *"([^"]+)".*/\1/')
-          echo "Detected version: $VERSION"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
 
-      - name: Prepare SSH key
+      - name: Install rsync
+        run: sudo apt-get update -y && sudo apt-get install -y rsync
+
+      - name: Prepare SSH key & known_hosts
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p ~/.ssh
           printf '%s' "${{ secrets.EASSIST_API_SRV }}" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
@@ -80,10 +83,9 @@ jobs:
           fi
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Rsync source (exclude node_modules to reuse server deps)
+      - name: Rsync project to server (exclude node_modules)
         run: |
-          set -e
-          sudo apt-get update -y && sudo apt-get install -y rsync
+          set -euo pipefail
           RSYNC_RSH="ssh -p ${DEPLOY_PORT} -o StrictHostKeyChecking=yes"
           rsync -az --delete \
             --exclude='.git' \
@@ -91,64 +93,59 @@ jobs:
             --exclude='.env' \
             -e "$RSYNC_RSH" ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
 
-      - name: Remote deploy (migrate, optional seeds, restart)
+      - name: Remote deploy (migrations, optional seeds, restart)
         env:
           BUILD_LABEL: v${{ steps.meta.outputs.version }}+ci.${{ github.run_number }}
         run: |
-          set -e
+          set -euo pipefail
           if [ "${RUN_SEEDS_INPUT}" = "true" ] || [ "${RUN_SEEDS_INPUT}" = "1" ]; then RUN_SEEDS=1; else RUN_SEEDS=0; fi
-          echo "RUN_SEEDS=$RUN_SEEDS"
-          # Pass environment explicitly to remote shell
           ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "DEPLOY_PATH='${DEPLOY_PATH}' RUN_SEEDS='${RUN_SEEDS}' BUILD_LABEL='${BUILD_LABEL}' GIT_SHA='${GIT_SHA}' bash -s" <<'EOF'
-set -e
-echo "[Remote] Starting deploy at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+set -euo pipefail
+echo "[Remote] Deploy start $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cd "$DEPLOY_PATH" || { echo "[Remote] ERROR: cannot cd to $DEPLOY_PATH" >&2; exit 1; }
-if [ ! -f package.json ]; then
-  echo "[Remote] ERROR: package.json missing in $DEPLOY_PATH" >&2; exit 1; fi
-# Ensure node_modules exists else install minimal prod deps
+if [ ! -f package.json ]; then echo "[Remote] package.json missing" >&2; exit 1; fi
+# Ensure production deps once
 if [ ! -d node_modules ]; then
-  echo "[Remote] node_modules missing; installing production dependencies";
+  echo "[Remote] Installing production dependencies";
   if command -v npm >/dev/null; then npm ci --only=production || npm install --production; fi
 fi
-# Migrations
+# Permissions prep + migrations
 if command -v npm >/dev/null; then
-  echo "[Remote] Running migrations";
-  npm run migrate:run 2>/dev/null || npm run migrate || echo "[Remote] migrations step non-critical";
+  echo "[Remote] migrate:prep"; npm run migrate:prep 2>/dev/null || true
+  echo "[Remote] migrate:run"; npm run migrate:run 2>/dev/null || npm run migrate || echo "[Remote] migrations non-critical"
 fi
-# Seeds
-if [ "$RUN_SEEDS" = "1" ]; then
-  echo "[Remote] Running seed scripts";
-  if command -v npm >/dev/null; then
-    npm run seed:permissions-and-superuser 2>/dev/null || true
-    npm run seed:initial 2>/dev/null || true
-  fi
+# Optional seeds
+if [ "${RUN_SEEDS}" = "1" ]; then
+  echo "[Remote] Seeding";
+  npm run seed:permissions-and-superuser 2>/dev/null || true
+  npm run seed:initial 2>/dev/null || true
 fi
-# Restart strategy preference: systemd > custom script > pm2 > manual
+# Restart preference: systemd -> script -> pm2 -> manual
 if command -v systemctl >/dev/null && systemctl list-units --type=service | grep -q "eassist-api"; then
-  echo "[Remote] Restarting via systemctl"; systemctl restart eassist-api || echo "[Remote] systemctl restart failed";
+  echo "[Remote] systemctl restart eassist-api"; systemctl restart eassist-api || echo "[Remote] systemctl restart failed";
 elif [ -x bin/deploy.sh ]; then
-  echo "[Remote] Using bin/deploy.sh restart"; bin/deploy.sh restart || bin/deploy.sh || true;
+  echo "[Remote] bin/deploy.sh restart"; bin/deploy.sh restart || bin/deploy.sh || true;
 elif command -v pm2 >/dev/null; then
-  echo "[Remote] Restarting via pm2"; pm2 reload eassist-api || pm2 restart eassist-api || true;
+  echo "[Remote] pm2 reload eassist-api"; pm2 reload eassist-api || pm2 restart eassist-api || true;
 else
-  echo "[Remote] Falling back to manual restart";
-  pkill -f 'node src/server.js' 2>/dev/null || true
-  (nohup npm start >/dev/null 2>&1 &) || true
+  echo "[Remote] manual restart"; pkill -f 'node src/server.js' 2>/dev/null || true; (nohup npm start >/dev/null 2>&1 &) || true;
 fi
-# Basic smoke test (non-fatal)
+# Smoke test
 if command -v curl >/dev/null; then
-  echo "[Remote] Smoke test attempt (http://localhost:8080/health)";
-  curl -fsS http://localhost:8080/health >/dev/null 2>&1 && echo "[Remote] Health endpoint OK" || echo "[Remote] Health endpoint not responding";
+  echo "[Remote] Health check /health";
+  curl -fsS http://localhost:8080/health >/dev/null 2>&1 && echo "[Remote] Health OK" || echo "[Remote] Health NOT responding";
 fi
-echo "[Remote] Deployment finished (BUILD_LABEL=$BUILD_LABEL GIT_SHA=$GIT_SHA)"
+echo "[Remote] Deploy done (BUILD_LABEL=$BUILD_LABEL GIT_SHA=$GIT_SHA)"
 EOF
 
       - name: Summary
         run: |
-          echo "Deployment complete" >> $GITHUB_STEP_SUMMARY
-          echo "Version: ${{ steps.meta.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "Commit: $GIT_SHA" >> $GITHUB_STEP_SUMMARY
-          echo "Seeds: ${RUN_SEEDS_INPUT}" >> $GITHUB_STEP_SUMMARY
-          echo "Target: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PORT} -> ${DEPLOY_PATH}" >> $GITHUB_STEP_SUMMARY
-          echo "Build Label: v${{ steps.meta.outputs.version }}+ci.${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "Deployment complete";
+            echo "Version: ${{ steps.meta.outputs.version }}";
+            echo "Commit: $GIT_SHA";
+            echo "Seeds: ${RUN_SEEDS_INPUT}";
+            echo "Target: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PORT} -> ${DEPLOY_PATH}";
+            echo "Build Label: v${{ steps.meta.outputs.version }}+ci.${{ github.run_number }}";
+          } >> "$GITHUB_STEP_SUMMARY"
