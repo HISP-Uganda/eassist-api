@@ -12,19 +12,16 @@ concurrency:
   group: migrate-production
   cancel-in-progress: false
 
-env:
-  DEPLOY_PATH: /opt/eassist-api
-  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || '194.163.173.144' }}
-  DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'gitdeploy' }}
-  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
-
 jobs:
   migrate:
     name: Run migrations remotely
     runs-on: ubuntu-latest
-    if: >-
-      ${{ github.ref == 'refs/heads/releases' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/releases') }}
+    if: github.ref == 'refs/heads/releases'
     env:
+      DEPLOY_PATH: /opt/eassist-api
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || '194.163.173.144' }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'gitdeploy' }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
       GIT_SHA: ${{ github.sha }}
     steps:
       - name: Checkout repository
@@ -32,7 +29,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate required files & secrets
+      - name: Validate prerequisites
         run: |
           set -euo pipefail
           if [ -z "${{ secrets.EASSIST_API_SRV }}" ]; then
@@ -41,19 +38,19 @@ jobs:
             echo '::error::scripts/run-migrations.js not found' >&2; exit 1; fi
           if [ ! -d scripts/migrations ]; then
             echo '::error::scripts/migrations directory missing' >&2; exit 1; fi
-          echo 'Validation passed.'
+          echo 'Prerequisites OK.'
 
       - name: Install rsync
         run: sudo apt-get update -y && sudo apt-get install -y rsync
 
-      - name: Prepare SSH key & known_hosts
+      - name: Setup SSH
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          printf '%s' "${{ secrets.EASSIST_API_SRV }}" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
+          printf '%s' "${{ secrets.EASSIST_API_SRV }}" > ~/.ssh/id_migrate
+          chmod 600 ~/.ssh/id_migrate
           eval "$(ssh-agent -s)" >/dev/null
-          ssh-add ~/.ssh/id_deploy
+          ssh-add ~/.ssh/id_migrate
           if [ -n "${{ secrets.DEPLOY_HOST_KNOWN_HOSTS || '' }}" ]; then
             echo "${{ secrets.DEPLOY_HOST_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
           else
@@ -61,31 +58,38 @@ jobs:
           fi
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Sync migration scripts only
+      - name: Sync migration assets
         run: |
           set -euo pipefail
           RSYNC_RSH="ssh -p ${DEPLOY_PORT} -o StrictHostKeyChecking=yes"
-          # Only send migrations + migration runner + package manifest (in case scripts rely on version)
           rsync -az \
             --include='scripts/' \
             --include='scripts/migrations/' \
-            --include='scripts/migrations/***' \
+            --include='scripts/migrations/**' \
             --include='scripts/run-migrations.js' \
             --include='package.json' \
             --exclude='*' \
             -e "$RSYNC_RSH" ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
 
-      - name: Run remote migrations
+      - name: Run migrations remotely
         run: |
           set -euo pipefail
-          ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "cd '${DEPLOY_PATH}' && if command -v node >/dev/null; then \n node scripts/run-migrations.js || npm run migrate:run || npm run migrate || echo '::warning::Migration script returned non-zero.'; \n else echo '::error::Node.js not available on server'; exit 1; fi"
+          ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'EOF'
+set -euo pipefail
+cd "$DEPLOY_PATH" || { echo '::error::Cannot cd to deploy path' >&2; exit 1; }
+if ! command -v node >/dev/null; then echo '::error::Node.js not on PATH' >&2; exit 1; fi
+if [ ! -f scripts/run-migrations.js ]; then echo '::error::run-migrations.js missing after sync' >&2; exit 1; fi
+if [ ! -d scripts/migrations ]; then echo '::error::migrations dir missing after sync' >&2; exit 1; fi
+echo "[Remote] Starting migrations at $(date -u +%Y-%m-%dT%H:%M:%SZ)";
+node scripts/run-migrations.js || npm run migrate:run || npm run migrate || echo '::warning::Migration script exited non-zero';
+echo "[Remote] Migrations completed";
+EOF
 
       - name: Summary
         run: |
           {
-            echo "Database migrations executed";
+            echo 'Migrations run';
             echo "Commit: $GIT_SHA";
             echo "Target: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PORT} -> ${DEPLOY_PATH}";
-            echo "Migrations directory: scripts/migrations";
+            echo 'Paths synced: scripts/migrations, scripts/run-migrations.js';
           } >> "$GITHUB_STEP_SUMMARY"
