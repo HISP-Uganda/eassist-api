@@ -1,5 +1,7 @@
 name: Deploy eAssist API
 
+run-name: Deploy eAssist API to Production (${{ github.sha }})
+
 on:
   push:
     branches: [ "releases" ]
