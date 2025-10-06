@@ -33,11 +33,14 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${{ secrets.EASSIST_API_SRV }}" ]; then
-            echo '::error::Missing required secret: EASSIST_API_SRV' >&2; exit 1; fi
+            echo '::error::Missing required secret: EASSIST_API_SRV' >&2; exit 1;
+          fi
           if [ ! -f scripts/run-migrations.js ]; then
-            echo '::error::scripts/run-migrations.js not found' >&2; exit 1; fi
+            echo '::error::scripts/run-migrations.js not found' >&2; exit 1;
+          fi
           if [ ! -d scripts/migrations ]; then
-            echo '::error::scripts/migrations directory missing' >&2; exit 1; fi
+            echo '::error::scripts/migrations directory missing' >&2; exit 1;
+          fi
           echo 'Prerequisites OK.'
 
       - name: Install rsync
@@ -72,23 +75,84 @@ jobs:
             -e "$RSYNC_RSH" ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
 
       - name: Run migrations remotely
+        id: migrate
+        continue-on-error: true
         run: |
           set -euo pipefail
-          ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'EOF'
+          ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "DEPLOY_PATH='${DEPLOY_PATH}' bash -s" <<'EOF'
           set -euo pipefail
-          cd "$DEPLOY_PATH" || { echo '::error::Cannot cd to deploy path' >&2; exit 1; }
-          if ! command -v node >/dev/null; then echo '::error::Node.js not on PATH' >&2; exit 1; fi
-          if [ ! -f scripts/run-migrations.js ]; then echo '::error::run-migrations.js missing after sync' >&2; exit 1; fi
-          if [ ! -d scripts/migrations ]; then echo '::error::migrations dir missing after sync' >&2; exit 1; fi
-          echo "[Remote] Starting migrations at $(date -u +%Y-%m-%dT%H:%M:%SZ)";
-          node scripts/run-migrations.js || npm run migrate:run || npm run migrate || echo '::warning::Migration script exited non-zero';
-          echo "[Remote] Migrations completed";
+          STATUS_FILE="remote_migrate_status.txt"
+          REASON=""
+          log() { printf "%s\n" "$1"; }
+          fail() { REASON="$1"; log "MIGRATION_FAILURE_REASON: $1"; echo "$REASON" > "$STATUS_FILE"; exit 1; }
+          log "[Remote] Starting migrations job"
+          log "[Remote] DEPLOY_PATH: $DEPLOY_PATH"
+          [ -d "$DEPLOY_PATH" ] || fail "Deploy path $DEPLOY_PATH missing"
+          cd "$DEPLOY_PATH" || fail "Cannot cd to $DEPLOY_PATH"
+          command -v node >/dev/null || fail "Node.js not on PATH"
+          log "[Remote] Node: $(node -v)"
+          if command -v npm >/dev/null; then log "[Remote] NPM: $(npm -v)"; else log "[Remote] npm not found (continuing)"; fi
+          [ -f scripts/run-migrations.js ] || fail "scripts/run-migrations.js missing"
+          [ -d scripts/migrations ] || fail "scripts/migrations directory missing"
+          if [ ! -f .env ]; then log "MIGRATION_WARNING: .env missing (DATABASE_URL may be unset)"; fi
+          log "[Remote] Listing migrations:"; ls -1 scripts/migrations || true
+          MIGR_OK=0
+          if node scripts/run-migrations.js; then
+            MIGR_OK=1
+          else
+            log "[Remote] node scripts/run-migrations.js failed; trying npm run migrate:run"
+            if command -v npm >/dev/null && npm run migrate:run 2>/dev/null; then
+              MIGR_OK=1
+            else
+              log "[Remote] migrate:run failed; trying npm run migrate"
+              if command -v npm >/dev/null && npm run migrate 2>/dev/null; then
+                MIGR_OK=1
+              fi
+            fi
+          fi
+          if [ "$MIGR_OK" -ne 1 ]; then fail "All migration attempts failed"; fi
+          log "[Remote] Migrations completed successfully"
+          echo "OK" > "$STATUS_FILE"
           EOF
+
+      - name: Evaluate migration result
+        id: evaluate
+        run: |
+          set -euo pipefail
+          # Attempt to read remote status file & reason
+          REMOTE_REASON=""
+          if ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" "test -f '${DEPLOY_PATH}/remote_migrate_status.txt'"; then
+            STATUS_CONTENT=$(ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" "cat '${DEPLOY_PATH}/remote_migrate_status.txt'")
+            echo "Remote status file content: $STATUS_CONTENT"
+            if [ "$STATUS_CONTENT" != "OK" ]; then
+              REMOTE_REASON="$STATUS_CONTENT"
+            fi
+          else
+            echo "No remote status file found (treating as failure if earlier step failed)."
+          fi
+          echo "remote_reason=$REMOTE_REASON" >> "$GITHUB_OUTPUT"
+          if [ "${{ steps.migrate.outcome }}" != "success" ]; then
+            echo "::error::Migration step outcome: ${{ steps.migrate.outcome }}"
+            if [ -n "$REMOTE_REASON" ]; then
+              echo "::error::Failure reason: $REMOTE_REASON"
+            fi
+            # Collect quick diagnostics
+            echo "--- Remote diagnostics (ls, disk, head of run-migrations.js) ---"
+            ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" "set -e; cd '${DEPLOY_PATH}' 2>/dev/null || exit 0; ls -1 scripts/migrations 2>/dev/null | tail -n 10; du -sh . 2>/dev/null || true; head -n 40 scripts/run-migrations.js 2>/dev/null || true" || true
+            exit 1
+          fi
 
       - name: Summary
         run: |
           {
-            echo 'Migrations run';
+            if [ "${{ steps.migrate.outcome }}" = "success" ]; then
+              echo 'Migrations run successfully';
+            else
+              echo 'Migrations failed';
+              echo "Outcome: ${{ steps.migrate.outcome }}";
+              echo "Reason: ${{ steps.evaluate.outputs.remote_reason }}";
+            fi
             echo "Commit: $GIT_SHA";
             echo "Target: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PORT} -> ${DEPLOY_PATH}";
             echo 'Paths synced: scripts/migrations, scripts/run-migrations.js';
