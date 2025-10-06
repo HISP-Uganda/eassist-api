@@ -16,7 +16,7 @@ jobs:
   migrate:
     name: Run migrations remotely
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/releases'
+    if: ${{ github.ref == 'refs/heads/releases' }}
     env:
       DEPLOY_PATH: /opt/eassist-api
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || '194.163.173.144' }}
@@ -75,15 +75,15 @@ jobs:
         run: |
           set -euo pipefail
           ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'EOF'
-set -euo pipefail
-cd "$DEPLOY_PATH" || { echo '::error::Cannot cd to deploy path' >&2; exit 1; }
-if ! command -v node >/dev/null; then echo '::error::Node.js not on PATH' >&2; exit 1; fi
-if [ ! -f scripts/run-migrations.js ]; then echo '::error::run-migrations.js missing after sync' >&2; exit 1; fi
-if [ ! -d scripts/migrations ]; then echo '::error::migrations dir missing after sync' >&2; exit 1; fi
-echo "[Remote] Starting migrations at $(date -u +%Y-%m-%dT%H:%M:%SZ)";
-node scripts/run-migrations.js || npm run migrate:run || npm run migrate || echo '::warning::Migration script exited non-zero';
-echo "[Remote] Migrations completed";
-EOF
+          set -euo pipefail
+          cd "$DEPLOY_PATH" || { echo '::error::Cannot cd to deploy path' >&2; exit 1; }
+          if ! command -v node >/dev/null; then echo '::error::Node.js not on PATH' >&2; exit 1; fi
+          if [ ! -f scripts/run-migrations.js ]; then echo '::error::run-migrations.js missing after sync' >&2; exit 1; fi
+          if [ ! -d scripts/migrations ]; then echo '::error::migrations dir missing after sync' >&2; exit 1; fi
+          echo "[Remote] Starting migrations at $(date -u +%Y-%m-%dT%H:%M:%SZ)";
+          node scripts/run-migrations.js || npm run migrate:run || npm run migrate || echo '::warning::Migration script exited non-zero';
+          echo "[Remote] Migrations completed";
+          EOF
 
       - name: Summary
         run: |
