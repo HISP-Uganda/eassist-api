@@ -89,87 +89,104 @@ jobs:
           npm run migrate:run || npm run migrate || log "Warning: Migration script failed or not found."
 
           log "Stopping existing eassist-api service"
-          STOPPED=0
           
-          # First, always try to kill any process on port 8080
-          if lsof -ti tcp:8080 >/dev/null 2>&1; then
-            log "Found process on port 8080, attempting to kill"
-            PIDS=$(lsof -ti tcp:8080)
-            echo "$PIDS" | xargs -r kill -15 2>/dev/null || true
-            sleep 2
-            # If still running, force kill
+          # Kill all processes on port 8080 - be very aggressive
+          for i in 1 2 3; do
             if lsof -ti tcp:8080 >/dev/null 2>&1; then
-              log "Process still running, force killing"
-              lsof -ti tcp:8080 | xargs -r kill -9 || true
+              log "Attempt $i: Killing processes on port 8080"
+              lsof -ti tcp:8080 | xargs -r kill -9 2>/dev/null || true
               sleep 2
+            else
+              log "Port 8080 is free"
+              break
             fi
-            STOPPED=1
-            log "Process on port 8080 killed"
-          fi
+          done
           
-          # Also try pkill as backup
-          if pkill -0 -f "node.*server.js" 2>/dev/null; then
-            log "Found node server.js process, killing"
-            pkill -15 -f "node.*server.js" 2>/dev/null || true
-            sleep 2
-            pkill -9 -f "node.*server.js" 2>/dev/null || true
-            sleep 1
-          fi
+          # Also kill any node server.js processes
+          for i in 1 2 3; do
+            if pgrep -f "node.*server.js" >/dev/null 2>&1; then
+              log "Attempt $i: Killing node server.js processes"
+              pkill -9 -f "node.*server.js" 2>/dev/null || true
+              sleep 2
+            else
+              log "No node server.js processes found"
+              break
+            fi
+          done
           
-          # Try systemd if available (only if gitdeploy has sudo permissions)
+          # Try systemd if available
           if command -v systemctl >/dev/null && systemctl list-units --type=service | grep -q "eassist-api" 2>/dev/null; then
             if sudo -n systemctl stop eassist-api 2>/dev/null; then
-              STOPPED=1
-              log "Service stopped via systemd."
+              log "Service stopped via systemd"
+              sleep 2
             fi
           fi
           
           # Try pm2 if available
           if command -v pm2 >/dev/null; then
-            pm2 stop eassist-api 2>/dev/null || true
             pm2 delete eassist-api 2>/dev/null || true
+            pm2 kill 2>/dev/null || true
+            sleep 2
           fi
           
-          # Final verification that port is free
+          # Final aggressive cleanup - kill everything that might be holding port 8080
+          fuser -k 8080/tcp 2>/dev/null || true
+          sleep 3
+          
+          # Verify port is actually free
           if lsof -ti tcp:8080 >/dev/null 2>&1; then
-            log "WARNING: Port 8080 still in use after stop attempts"
-            lsof -ti tcp:8080 | xargs -r kill -9 || true
-            sleep 3
+            log "ERROR: Port 8080 still in use after all kill attempts!"
+            lsof -ti tcp:8080 | xargs -r ps -fp || true
+            fail "Cannot free port 8080"
           fi
           
-          log "Port 8080 is now free"
+          log "Confirmed: Port 8080 is now free"
 
           log "Starting the service"
           STARTED=0
-          # Try systemd first (only if gitdeploy has sudo permissions)
+          
+          # Try systemd first
           if command -v systemctl >/dev/null && systemctl list-units --type=service --all | grep -q "eassist-api" 2>/dev/null; then
             if sudo -n systemctl start eassist-api 2>/dev/null; then
               STARTED=1
-              log "Service started via systemd."
-            else
-              log "Cannot use systemd without passwordless sudo; trying other methods."
+              log "Service started via systemd"
             fi
           fi
+          
           # Try pm2
           if [ "$STARTED" -eq 0 ] && command -v pm2 >/dev/null; then
-            pm2 start npm --name eassist-api -- start && STARTED=1 && log "Service started via pm2."
+            pm2 start npm --name eassist-api -- start && STARTED=1 && log "Service started via pm2"
           fi
-          # Fallback to npm start in background (no sudo required)
+          
+          # Fallback to nohup npm start
           if [ "$STARTED" -eq 0 ]; then
-            log "Starting via npm (background, no systemd/pm2 available)"
-            # Kill any lingering processes first
-            pkill -9 -f "node.*server.js" 2>/dev/null || true
-            sleep 1
-            # Start in background and redirect output to log file
-            nohup npm start >> /tmp/eassist-api.log 2>&1 &
-            sleep 3
+            log "Starting via nohup npm start (production mode)"
+            
+            # Ensure log directory exists
+            sudo mkdir -p /var/log 2>/dev/null || mkdir -p /var/log 2>/dev/null || true
+            sudo touch /var/log/eassist-api.out 2>/dev/null || touch /var/log/eassist-api.out 2>/dev/null || true
+            sudo chown $USER /var/log/eassist-api.out 2>/dev/null || true
+            
+            # Start the service in background
+            NODE_ENV=production nohup npm start >/var/log/eassist-api.out 2>&1 &
+            NEW_PID=$!
+            log "Started npm with PID: $NEW_PID"
+            
+            # Wait and verify
+            sleep 5
+            
             if lsof -ti tcp:8080 >/dev/null 2>&1; then
               STARTED=1
-              log "Service started successfully via npm (background)"
-              log "Logs available at: /tmp/eassist-api.log"
+              log "Service started successfully via nohup npm start"
+              log "Logs: /var/log/eassist-api.out"
+              log "PID: $(lsof -ti tcp:8080)"
             else
-              log "Port 8080 not listening yet, checking logs..."
-              tail -n 20 /tmp/eassist-api.log 2>/dev/null || true
+              log "Port 8080 not listening after 5 seconds, checking logs and process..."
+              ps -fp $NEW_PID 2>/dev/null || log "Process $NEW_PID no longer running"
+              if [ -f /var/log/eassist-api.out ]; then
+                log "Last 30 lines of log:"
+                tail -n 30 /var/log/eassist-api.out
+              fi
               fail "Failed to start service - port 8080 not listening after npm start"
             fi
           fi
