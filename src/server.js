@@ -10,6 +10,9 @@ import cookieParser from "cookie-parser";
 import buildOpenApi from "./docs/openapi.js";
 import swaggerUi from "swagger-ui-express";
 import { AppError, NotFound, Internal } from "./utils/errors.js";
+import auditLogger from "./middleware/audit-logger.js";
+import { auditLog } from "./utils/logger.js";
+import { getVersionInfo } from "./utils/version.js";
 dotenv.config();
 const app = express();
 app.set("trust proxy", true); // or app.set('trust proxy', 1);
@@ -46,6 +49,8 @@ app.use(helmet());
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
+// Structured audit logger (JSON lines to console and optional file)
+app.use(auditLogger);
 app.use(morgan("dev"));
 app.use("/api", api);
 // OpenAPI JSON
@@ -80,6 +85,7 @@ app.get("/api/info", async (req, res) => {
     version: "10.0.0",
     name: "eAssist API",
     env: process.env.NODE_ENV || "development",
+    build: getVersionInfo(),
     start_time: startTime.toISOString(),
     uptime_seconds: Math.round(process.uptime()),
     now: new Date().toISOString(),
@@ -278,6 +284,26 @@ app.use((err, req, res, next) => {
     method: req.method,
     timestamp: new Date().toISOString(),
   };
+  // Emit structured error audit log (redacted minimal details)
+  const user = (() => {
+    const u = req.user || {};
+    const apiKey = u.api_key ? { id: u.api_key.id, name: u.api_key.name } : null;
+    return { sub: u.sub || null, email: u.email || null, roles: u.roles || null, api_key: apiKey };
+  })();
+  try {
+    auditLog({
+      type: "error",
+      ts: payload.timestamp,
+      request_id: payload.request_id,
+      method: payload.method,
+      path: payload.path,
+      status,
+      code,
+      message,
+      user,
+      has_details: Boolean(payload.details),
+    });
+  } catch {}
   // Hide stack unless in development
   if (
     (process.env.NODE_ENV || "").toLowerCase() === "development" &&

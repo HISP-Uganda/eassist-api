@@ -14,6 +14,7 @@ Production-grade Express + PostgreSQL API for the eAssist Helpdesk platform.
 - Quick start
 - Requirements
 - Environment (.env)
+- Audit logging
 - Database and migrations
 - Run the API
 - Auth and security
@@ -77,10 +78,45 @@ Copy `.env.sample` to `.env`. Key variables:
 - ACCESS_TOKEN_TTL_MIN=30
 - REFRESH_TOKEN_TTL_DAYS=7
 - CORS_ORIGINS=http://localhost:3000
+- AUDIT_LOG_PATH=/var/log/eassist-api/audit.log  # optional; enables JSONL access logs to file
 
 Notes:
 - `.env` is git-ignored; `.env.sample` is provided with safe defaults.
 - Admin seed scripts look at ADMIN_EMAIL/ADMIN_PASSWORD; see `.env.sample`.
+
+---
+
+## Audit logging
+
+The API emits structured JSON audit logs for every request, including:
+- request_id, method, path, status, duration_ms
+- ip, user-agent, host
+- authenticated user snapshot (sub, email, roles, or api_key id/name if used)
+
+By default, logs print to stdout. To also persist to a file, set `AUDIT_LOG_PATH`:
+
+```bash
+export AUDIT_LOG_PATH=/var/log/eassist-api/audit.log
+npm start
+```
+
+Each line is a JSON object (JSONL). Sensitive headers (Authorization, Cookie) are redacted if included.
+
+Tip: rotate logs with logrotate (Linux):
+
+```bash
+sudo tee /etc/logrotate.d/eassist-api <<'ROT'
+/var/log/eassist-api/*.log {
+  daily
+  rotate 14
+  missingok
+  compress
+  delaycompress
+  notifempty
+  copytruncate
+}
+ROT
+```
 
 ---
 
