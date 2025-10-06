@@ -158,7 +158,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ steps.remote_deploy.outcome }}" != "success" ]; then
-            STATUS_CONTENT=$(ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" "cat '${DEPLOY_PATH}/remote_deploy_status.txt'" || echo "Could not read remote status file.")
+            STATUS_CONTENT=$(ssh -i ~/.ssh/id_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" "cat '${DEPLOY_PATH}/remote_deploy_status.txt'" || echo "Could not read remote status file.")
             echo "::error::Deployment script failed. Reason: $STATUS_CONTENT"
             exit 1
           fi
