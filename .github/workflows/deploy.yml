@@ -88,20 +88,53 @@ jobs:
           log "Running database migrations"
           npm run migrate:run || npm run migrate || log "Warning: Migration script failed or not found."
 
-          log "Restarting the service"
-          RESTARTED=0
+          log "Stopping existing eassist-api service"
+          STOPPED=0
+          # Try systemd first
           if command -v systemctl >/dev/null && systemctl list-units --type=service | grep -q "eassist-api"; then
-            systemctl restart eassist-api && RESTARTED=1 && log "Service restarted via systemd."
+            systemctl stop eassist-api && STOPPED=1 && log "Service stopped via systemd."
           fi
-          if [ "$RESTARTED" -eq 0 ] && [ -x bin/deploy.sh ]; then
-            ./bin/deploy.sh restart && RESTARTED=1 && log "Service restarted via bin/deploy.sh."
+          # Try pm2
+          if [ "$STOPPED" -eq 0 ] && command -v pm2 >/dev/null; then
+            pm2 stop eassist-api 2>/dev/null && STOPPED=1 && log "Service stopped via pm2." || true
+            pm2 delete eassist-api 2>/dev/null || true
           fi
-          if [ "$RESTARTED" -eq 0 ] && command -v pm2 >/dev/null; then
-            pm2 reload eassist-api || pm2 restart eassist-api && RESTARTED=1 && log "Service restarted via pm2."
+          # Kill any process on port 8080
+          if lsof -ti tcp:8080 >/dev/null 2>&1; then
+            log "Killing process on port 8080"
+            lsof -ti tcp:8080 | xargs -r kill -9 || pkill -9 -f "node.*server.js" || true
+            sleep 2
           fi
-          if [ "$RESTARTED" -eq 0 ]; then
-            log "No systemd/pm2/deploy.sh found, trying npm restart script."
-            npm run restart:8080 || fail "All restart methods failed."
+
+          log "Starting the service"
+          STARTED=0
+          # Try systemd first
+          if command -v systemctl >/dev/null && systemctl list-units --type=service --all | grep -q "eassist-api"; then
+            systemctl start eassist-api && STARTED=1 && log "Service started via systemd."
+          fi
+          # Try pm2
+          if [ "$STARTED" -eq 0 ] && command -v pm2 >/dev/null; then
+            pm2 start npm --name eassist-api -- start && STARTED=1 && log "Service started via pm2."
+          fi
+          # Try deploy script
+          if [ "$STARTED" -eq 0 ] && [ -x bin/deploy.sh ]; then
+            ./bin/deploy.sh start && STARTED=1 && log "Service started via bin/deploy.sh."
+          fi
+          # Fallback to npm start in background
+          if [ "$STARTED" -eq 0 ]; then
+            log "Starting via npm (background)"
+            nohup npm start > /dev/null 2>&1 &
+            sleep 3
+            if lsof -ti tcp:8080 >/dev/null 2>&1; then
+              STARTED=1
+              log "Service started successfully via npm (background)"
+            else
+              fail "Failed to start service - port 8080 not listening after npm start"
+            fi
+          fi
+
+          if [ "$STARTED" -eq 0 ]; then
+            fail "All start methods failed."
           fi
 
           log "Deployment script finished successfully"
