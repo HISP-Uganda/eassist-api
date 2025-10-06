@@ -1,22 +1,15 @@
-name: Deploy eAssist API
+name: Migrate Database (eAssist API)
 
 on:
   push:
     branches: [ "releases" ]
-  release:
-    types: [ published ]
   workflow_dispatch:
-    inputs:
-      runSeeds:
-        description: 'Run seed scripts after migrations (true/false)'
-        required: false
-        default: 'false'
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-production
+  group: migrate-production
   cancel-in-progress: false
 
 env:
@@ -26,44 +19,29 @@ env:
   DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
 
 jobs:
-  deploy:
-    name: Build and Deploy
+  migrate:
+    name: Run migrations remotely
     runs-on: ubuntu-latest
     if: >-
-      ${{ github.ref == 'refs/heads/releases' ||
-          (github.event_name == 'release' && github.event.release.target_commitish == 'releases') ||
-          (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/releases') }}
+      ${{ github.ref == 'refs/heads/releases' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/releases') }}
     env:
       GIT_SHA: ${{ github.sha }}
-      RUN_SEEDS_INPUT: ${{ github.event.inputs.runSeeds || 'false' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Validate environment & secrets
+      - name: Validate required files & secrets
         run: |
           set -euo pipefail
-          echo "Ref: $GITHUB_REF"
           if [ -z "${{ secrets.EASSIST_API_SRV }}" ]; then
             echo '::error::Missing required secret: EASSIST_API_SRV' >&2; exit 1; fi
-          if [ ! -f package.json ]; then
-            echo '::error::package.json not found at repo root' >&2; ls -al; exit 1; fi
-          if [ ! -f package-lock.json ]; then
-            echo '::error::package-lock.json missing – commit your lockfile for reproducible deploys' >&2; exit 1; fi
-          echo 'Environment validation passed.'
-
-      - name: Setup Node 20.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
-
-      - name: Read version
-        id: meta
-        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+          if [ ! -f scripts/run-migrations.js ]; then
+            echo '::error::scripts/run-migrations.js not found' >&2; exit 1; fi
+          if [ ! -d scripts/migrations ]; then
+            echo '::error::scripts/migrations directory missing' >&2; exit 1; fi
+          echo 'Validation passed.'
 
       - name: Install rsync
         run: sudo apt-get update -y && sudo apt-get install -y rsync
@@ -83,69 +61,31 @@ jobs:
           fi
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Rsync project to server (exclude node_modules)
+      - name: Sync migration scripts only
         run: |
           set -euo pipefail
           RSYNC_RSH="ssh -p ${DEPLOY_PORT} -o StrictHostKeyChecking=yes"
-          rsync -az --delete \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='.env' \
+          # Only send migrations + migration runner + package manifest (in case scripts rely on version)
+          rsync -az \
+            --include='scripts/' \
+            --include='scripts/migrations/' \
+            --include='scripts/migrations/***' \
+            --include='scripts/run-migrations.js' \
+            --include='package.json' \
+            --exclude='*' \
             -e "$RSYNC_RSH" ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
 
-      - name: Remote deploy (migrations, optional seeds, restart)
-        env:
-          BUILD_LABEL: v${{ steps.meta.outputs.version }}+ci.${{ github.run_number }}
+      - name: Run remote migrations
         run: |
           set -euo pipefail
-          if [ "${RUN_SEEDS_INPUT}" = "true" ] || [ "${RUN_SEEDS_INPUT}" = "1" ]; then RUN_SEEDS=1; else RUN_SEEDS=0; fi
           ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "DEPLOY_PATH='${DEPLOY_PATH}' RUN_SEEDS='${RUN_SEEDS}' BUILD_LABEL='${BUILD_LABEL}' GIT_SHA='${GIT_SHA}' bash -s" <<'EOF'
-set -euo pipefail
-echo "[Remote] Deploy start $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-cd "$DEPLOY_PATH" || { echo "[Remote] ERROR: cannot cd to $DEPLOY_PATH" >&2; exit 1; }
-if [ ! -f package.json ]; then echo "[Remote] package.json missing" >&2; exit 1; fi
-# Ensure production deps once
-if [ ! -d node_modules ]; then
-  echo "[Remote] Installing production dependencies";
-  if command -v npm >/dev/null; then npm ci --only=production || npm install --production; fi
-fi
-# Permissions prep + migrations
-if command -v npm >/dev/null; then
-  echo "[Remote] migrate:prep"; npm run migrate:prep 2>/dev/null || true
-  echo "[Remote] migrate:run"; npm run migrate:run 2>/dev/null || npm run migrate || echo "[Remote] migrations non-critical"
-fi
-# Optional seeds
-if [ "${RUN_SEEDS}" = "1" ]; then
-  echo "[Remote] Seeding";
-  npm run seed:permissions-and-superuser 2>/dev/null || true
-  npm run seed:initial 2>/dev/null || true
-fi
-# Restart preference: systemd -> script -> pm2 -> manual
-if command -v systemctl >/dev/null && systemctl list-units --type=service | grep -q "eassist-api"; then
-  echo "[Remote] systemctl restart eassist-api"; systemctl restart eassist-api || echo "[Remote] systemctl restart failed";
-elif [ -x bin/deploy.sh ]; then
-  echo "[Remote] bin/deploy.sh restart"; bin/deploy.sh restart || bin/deploy.sh || true;
-elif command -v pm2 >/dev/null; then
-  echo "[Remote] pm2 reload eassist-api"; pm2 reload eassist-api || pm2 restart eassist-api || true;
-else
-  echo "[Remote] manual restart"; pkill -f 'node src/server.js' 2>/dev/null || true; (nohup npm start >/dev/null 2>&1 &) || true;
-fi
-# Smoke test
-if command -v curl >/dev/null; then
-  echo "[Remote] Health check /health";
-  curl -fsS http://localhost:8080/health >/dev/null 2>&1 && echo "[Remote] Health OK" || echo "[Remote] Health NOT responding";
-fi
-echo "[Remote] Deploy done (BUILD_LABEL=$BUILD_LABEL GIT_SHA=$GIT_SHA)"
-EOF
+            "cd '${DEPLOY_PATH}' && if command -v node >/dev/null; then \n node scripts/run-migrations.js || npm run migrate:run || npm run migrate || echo '::warning::Migration script returned non-zero.'; \n else echo '::error::Node.js not available on server'; exit 1; fi"
 
       - name: Summary
         run: |
           {
-            echo "Deployment complete";
-            echo "Version: ${{ steps.meta.outputs.version }}";
+            echo "Database migrations executed";
             echo "Commit: $GIT_SHA";
-            echo "Seeds: ${RUN_SEEDS_INPUT}";
             echo "Target: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PORT} -> ${DEPLOY_PATH}";
-            echo "Build Label: v${{ steps.meta.outputs.version }}+ci.${{ github.run_number }}";
+            echo "Migrations directory: scripts/migrations";
           } >> "$GITHUB_STEP_SUMMARY"
