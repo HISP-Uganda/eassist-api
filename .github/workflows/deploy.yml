@@ -90,9 +90,14 @@ jobs:
 
           log "Stopping existing eassist-api service"
           STOPPED=0
-          # Try systemd first
-          if command -v systemctl >/dev/null && systemctl list-units --type=service | grep -q "eassist-api"; then
-            systemctl stop eassist-api && STOPPED=1 && log "Service stopped via systemd."
+          # Try systemd first (only if gitdeploy has sudo permissions)
+          if command -v systemctl >/dev/null && systemctl list-units --type=service | grep -q "eassist-api" 2>/dev/null; then
+            if sudo -n systemctl stop eassist-api 2>/dev/null; then
+              STOPPED=1
+              log "Service stopped via systemd."
+            else
+              log "Cannot use systemd without passwordless sudo; trying other methods."
+            fi
           fi
           # Try pm2
           if [ "$STOPPED" -eq 0 ] && command -v pm2 >/dev/null; then
@@ -108,27 +113,35 @@ jobs:
 
           log "Starting the service"
           STARTED=0
-          # Try systemd first
-          if command -v systemctl >/dev/null && systemctl list-units --type=service --all | grep -q "eassist-api"; then
-            systemctl start eassist-api && STARTED=1 && log "Service started via systemd."
+          # Try systemd first (only if gitdeploy has sudo permissions)
+          if command -v systemctl >/dev/null && systemctl list-units --type=service --all | grep -q "eassist-api" 2>/dev/null; then
+            if sudo -n systemctl start eassist-api 2>/dev/null; then
+              STARTED=1
+              log "Service started via systemd."
+            else
+              log "Cannot use systemd without passwordless sudo; trying other methods."
+            fi
           fi
           # Try pm2
           if [ "$STARTED" -eq 0 ] && command -v pm2 >/dev/null; then
             pm2 start npm --name eassist-api -- start && STARTED=1 && log "Service started via pm2."
           fi
-          # Try deploy script
-          if [ "$STARTED" -eq 0 ] && [ -x bin/deploy.sh ]; then
-            ./bin/deploy.sh start && STARTED=1 && log "Service started via bin/deploy.sh."
-          fi
-          # Fallback to npm start in background
+          # Fallback to npm start in background (no sudo required)
           if [ "$STARTED" -eq 0 ]; then
-            log "Starting via npm (background)"
-            nohup npm start > /dev/null 2>&1 &
+            log "Starting via npm (background, no systemd/pm2 available)"
+            # Kill any lingering processes first
+            pkill -9 -f "node.*server.js" 2>/dev/null || true
+            sleep 1
+            # Start in background and redirect output to log file
+            nohup npm start >> /tmp/eassist-api.log 2>&1 &
             sleep 3
             if lsof -ti tcp:8080 >/dev/null 2>&1; then
               STARTED=1
               log "Service started successfully via npm (background)"
+              log "Logs available at: /tmp/eassist-api.log"
             else
+              log "Port 8080 not listening yet, checking logs..."
+              tail -n 20 /tmp/eassist-api.log 2>/dev/null || true
               fail "Failed to start service - port 8080 not listening after npm start"
             fi
           fi
