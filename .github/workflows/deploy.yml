@@ -21,7 +21,7 @@ jobs:
     if: >-
       ${{ github.ref == 'refs/heads/releases'
           || (github.event_name == 'release' && github.event.release.target_commitish == 'releases')
-          || github.event_name == 'workflow_dispatch' }}
+          || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/releases') }}
     env:
       DEPLOY_PATH: /opt/eassist-api
       GIT_SHA: ${{ github.sha }}
@@ -61,7 +61,8 @@ jobs:
 
       - name: Read version
         id: v
-        run: echo "version=$(node -e "console.log(require('./package.json').version)")" >> $GITHUB_OUTPUT
+        run: |
+          echo "version=$(node -e 'console.log(require("./package.json").version)')" >> "$GITHUB_OUTPUT"
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
