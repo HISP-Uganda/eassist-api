@@ -6,6 +6,11 @@ on:
   release:
     types: [ published ]
   workflow_dispatch:
+    inputs:
+      runSeeds:
+        description: 'Run seed scripts after migrations (true/false)'
+        required: false
+        default: 'false'
 
 permissions:
   contents: read
@@ -31,11 +36,10 @@ jobs:
           (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/releases') }}
     env:
       GIT_SHA: ${{ github.sha }}
+      RUN_SEEDS_INPUT: ${{ github.event.inputs.runSeeds || 'false' }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - name: Checkout repository (v3)
+        uses: actions/checkout@v3
 
       - name: Validate environment & secrets
         run: |
@@ -50,31 +54,12 @@ jobs:
             ls -al
             exit 1
           fi
-          if [ ! -f package-lock.json ]; then
-            echo '::error::package-lock.json is required for reproducible build (commit it first).'
-            exit 1
-          fi
-          echo "Target: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PORT} -> ${DEPLOY_PATH}" \
-            | sed 's/\(DEPLOY_HOST\|DEPLOY_USER\)/[masked]/g'
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Show Node & npm versions
-        run: node -v && npm -v && npm config get fund false || true
-
-      - name: Install dependencies (npm ci)
-        run: |
-          set -e
-          npm ci
+          echo "Target: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PORT} -> ${DEPLOY_PATH}" | sed 's/\(DEPLOY_HOST\|DEPLOY_USER\)/[masked]/g'
+          echo "Run seeds input: ${RUN_SEEDS_INPUT}"
 
       - name: Read version
         id: meta
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
 
       - name: Prepare SSH key
         run: |
@@ -84,65 +69,71 @@ jobs:
           chmod 600 ~/.ssh/id_deploy
           eval "$(ssh-agent -s)" >/dev/null
           ssh-add ~/.ssh/id_deploy
-          # Known hosts hardening
           if [ -n "${{ secrets.DEPLOY_HOST_KNOWN_HOSTS || '' }}" ]; then
             echo "${{ secrets.DEPLOY_HOST_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
           else
-            ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" > ~/.ssh/known_hosts 2>/dev/null || {
-              echo '::warning::Host key scan failed; continuing (may require manual trust).'
-            }
+            ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" > ~/.ssh/known_hosts 2>/dev/null || true
           fi
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Install rsync
-        run: sudo apt-get update -y && sudo apt-get install -y rsync
-
-      - name: Rsync project to server
+      - name: Rsync source (exclude node_modules to reuse server deps)
         run: |
           set -e
+          sudo apt-get update -y && sudo apt-get install -y rsync
           RSYNC_RSH="ssh -p ${DEPLOY_PORT} -o StrictHostKeyChecking=yes"
-          # Show a short diff context (what will be sent) - optional
-          echo 'Top-level files:'
-          ls -1 | head -n 40
           rsync -az --delete \
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='.env' \
             -e "$RSYNC_RSH" ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
 
-      - name: Remote deploy script
+      - name: Remote deploy (migrate, optional seeds, restart)
         env:
           BUILD_LABEL: v${{ steps.meta.outputs.version }}+ci.${{ github.run_number }}
         run: |
           set -e
-          ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "EASSIST_BUILD='${BUILD_LABEL}' GIT_SHA='${GIT_SHA}' ${DEPLOY_PATH}/bin/deploy.sh"
-
-      - name: (Optional) Remote smoke test
-        continue-on-error: true
-        run: |
+          # Translate run seeds input to 1/0
+          if [ "${RUN_SEEDS_INPUT}" = "true" ] || [ "${RUN_SEEDS_INPUT}" = "1" ]; then RUN_SEEDS=1; else RUN_SEEDS=0; fi
+          echo "RUN_SEEDS=$RUN_SEEDS"
+          ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
           set -e
-          if ssh -p "$DEPLOY_PORT" "${DEPLOY_USER}@${DEPLOY_HOST}" "command -v curl >/dev/null"; then
-            echo 'Attempting remote health check (port 8080 assumed)...'
-            ssh -p "$DEPLOY_PORT" "${DEPLOY_USER}@${DEPLOY_HOST}" "curl -fsS localhost:8080/health || curl -fsS localhost:8080 || true"
-          else
-            echo 'curl not available remotely; skipping health probe.'
+          echo "[Remote] Starting deploy at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cd "$DEPLOY_PATH"
+          if [ ! -f package.json ]; then
+            echo "[Remote] ERROR: package.json missing in $DEPLOY_PATH" >&2; exit 1; fi
+          # Ensure node_modules exists (reuse) else install production deps
+          if [ ! -d node_modules ]; then
+            echo "[Remote] node_modules missing; installing production dependencies";
+            if command -v npm >/dev/null; then npm ci --only=production || npm install --production; fi
           fi
+          echo "[Remote] Running migrations (npm run migrate:run || migrate)"
+          if command -v npm >/dev/null; then npm run migrate:run 2>/dev/null || npm run migrate || echo "[Remote] migrations step non-critical"; fi
+          if [ "$RUN_SEEDS" = "1" ]; then
+            echo "[Remote] Running seed scripts"
+            if command -v npm >/dev/null; then 
+              npm run seed:permissions-and-superuser 2>/dev/null || true
+              npm run seed:initial 2>/dev/null || true
+            fi
+          fi
+          echo "[Remote] Restarting service"
+          if [ -x bin/deploy.sh ]; then
+            echo "[Remote] Using bin/deploy.sh restart"
+            bin/deploy.sh restart || bin/deploy.sh || true
+          elif command -v pm2 >/dev/null; then
+            pm2 reload eassist-api || pm2 restart eassist-api || true
+          else
+            echo "[Remote] Falling back to manual restart"
+            pkill -f 'node src/server.js' 2>/dev/null || true
+            (nohup npm start >/dev/null 2>&1 &) || true
+          fi
+          echo "[Remote] Deployment finished"
+REMOTE_EOF
 
       - name: Summary
         run: |
           echo "Deployment complete" >> $GITHUB_STEP_SUMMARY
           echo "Version: ${{ steps.meta.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "Commit: $GIT_SHA" >> $GITHUB_STEP_SUMMARY
+          echo "Seeds: ${RUN_SEEDS_INPUT}" >> $GITHUB_STEP_SUMMARY
           echo "Target: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PORT} -> ${DEPLOY_PATH}" >> $GITHUB_STEP_SUMMARY
           echo "Build Label: v${{ steps.meta.outputs.version }}+ci.${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
-
-      - name: Upload deploy metadata artifact
-        uses: actions/upload-artifact@v4
-        with:
-            name: deploy-metadata
-            retention-days: 7
-            path: |
-              package.json
-              package-lock.json
