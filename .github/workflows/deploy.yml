@@ -24,12 +24,24 @@ jobs:
           || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/releases') }}
     env:
       DEPLOY_PATH: /opt/eassist-api
+      # Fallbacks if repo/environment secrets not provided
+      DEPLOY_HOST_EXPR: ${{ secrets.DEPLOY_HOST || '194.163.173.144' }}
+      DEPLOY_USER_EXPR: ${{ secrets.DEPLOY_USER || 'gitdeploy' }}
       GIT_SHA: ${{ github.sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Validate required secrets
+        run: |
+          # We intentionally fail early if the private key secret is missing
+          if [ -z "${{ secrets.EASSIST_API_SRV }}" ]; then
+            echo '::error::Missing required secret: EASSIST_API_SRV' >&2
+            exit 1
+          fi
+          echo "Using deploy host: $DEPLOY_HOST_EXPR and user: $DEPLOY_USER_EXPR"
 
       - name: Use Node 20.x
         uses: actions/setup-node@v4
@@ -52,7 +64,7 @@ jobs:
       - name: Install dependencies (prefer ci)
         run: |
           set -e
-          echo "Installing dependencies with npm ci"
+            echo "Installing dependencies with npm ci"
           if ! npm ci; then
             echo "::warning::npm ci failed; falling back to npm install"
             rm -rf node_modules
@@ -62,12 +74,12 @@ jobs:
       - name: Read version
         id: v
         run: |
-          echo "version=$(node -e 'console.log(require("./package.json").version)')" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-private-key: ${{ secrets.EASSIST_API_SRV }}
 
       - name: Configure known_hosts
         run: |
@@ -76,7 +88,7 @@ jobs:
           if [ -n "${{ secrets.DEPLOY_HOST_KNOWN_HOSTS || '' }}" ]; then
             echo "${{ secrets.DEPLOY_HOST_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
           else
-            ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+            ssh-keyscan -H $DEPLOY_HOST_EXPR >> ~/.ssh/known_hosts
           fi
           chmod 644 ~/.ssh/known_hosts
 
@@ -88,16 +100,16 @@ jobs:
             --exclude='node_modules' \
             --exclude='.env' \
             ./ \
-            ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/
+            ${DEPLOY_USER_EXPR}@${DEPLOY_HOST_EXPR}:$DEPLOY_PATH/
 
       - name: Remote deploy
         env:
           BUILD_LABEL: v${{ steps.v.outputs.version }}+ci.${{ github.run_number }}
         run: |
           ssh -o StrictHostKeyChecking=yes \
-            ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} \
+            ${DEPLOY_USER_EXPR}@${DEPLOY_HOST_EXPR} \
             "EASSIST_BUILD='${BUILD_LABEL}' GIT_SHA='${{ env.GIT_SHA }}' ${DEPLOY_PATH}/bin/deploy.sh"
 
       - name: Summary
         run: |
-          echo "Deployed version: ${{ steps.v.outputs.version }} commit: $GIT_SHA"
+          echo "Deployed version: ${{ steps.v.outputs.version }} commit: $GIT_SHA to $DEPLOY_HOST_EXPR as $DEPLOY_USER_EXPR"
