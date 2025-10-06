@@ -2,7 +2,7 @@ name: Deploy eAssist API
 
 on:
   push:
-    branches: [ "main", "releases" ]
+    branches: [ "releases" ]
   workflow_dispatch:
 
 permissions:
@@ -13,18 +13,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  no-op:
-    name: No-Op (Not on releases branch)
-    runs-on: ubuntu-latest
-    if: ${{ github.ref != 'refs/heads/releases' }}
-    steps:
-      - name: Report success
-        run: echo "Deployment runs only on the 'releases' branch. This is a no-op success."
-
   deploy:
     name: Deploy and Restart API
     runs-on: ubuntu-latest
-    needs: no-op
     if: ${{ github.ref == 'refs/heads/releases' }}
     env:
       DEPLOY_PATH: /opt/eassist-api
