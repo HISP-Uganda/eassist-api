@@ -14,20 +14,27 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+env:
+  DEPLOY_PATH: /opt/eassist-api
+  # Defaults (overridden by repo secrets if set)
+  DEPLOY_HOST_EXPR: ${{ secrets.DEPLOY_HOST || '194.163.173.144' }}
+  DEPLOY_USER_EXPR: ${{ secrets.DEPLOY_USER || 'gitdeploy' }}
+  DEPLOY_PORT_EXPR: ${{ secrets.DEPLOY_PORT || '22' }}
+
 jobs:
   deploy:
     name: Build and Deploy eAssist API
     runs-on: ubuntu-latest
     if: >-
-      ${{ github.ref == 'refs/heads/releases'
-          || (github.event_name == 'release' && github.event.release.target_commitish == 'releases')
-          || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/releases') }}
+      ${{
+        github.ref == 'refs/heads/releases' ||
+        (github.event_name == 'release' && github.event.release.target_commitish == 'releases') ||
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/releases')
+      }}
+
     env:
-      DEPLOY_PATH: /opt/eassist-api
-      # Fallbacks if repo/environment secrets not provided
-      DEPLOY_HOST_EXPR: ${{ secrets.DEPLOY_HOST || '194.163.173.144' }}
-      DEPLOY_USER_EXPR: ${{ secrets.DEPLOY_USER || 'gitdeploy' }}
       GIT_SHA: ${{ github.sha }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,19 +43,23 @@ jobs:
 
       - name: Validate required secrets
         run: |
-          # We intentionally fail early if the private key secret is missing
           if [ -z "${{ secrets.EASSIST_API_SRV }}" ]; then
             echo '::error::Missing required secret: EASSIST_API_SRV' >&2
             exit 1
           fi
-          echo "Using deploy host: $DEPLOY_HOST_EXPR and user: $DEPLOY_USER_EXPR"
+          if [ ! -f package.json ]; then
+            echo '::error::package.json not found at repository root (expected project root).' >&2
+            ls -al
+            exit 1
+          fi
+          echo "Target ${DEPLOY_USER_EXPR}@${DEPLOY_HOST_EXPR}:${DEPLOY_PORT_EXPR} → ${DEPLOY_PATH}"
 
       - name: Use Node 20.x
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
+            node-version: '20'
+            cache: 'npm'
+            cache-dependency-path: package-lock.json
 
       - name: Show Node & npm versions
         run: node -v && npm -v
@@ -64,7 +75,7 @@ jobs:
       - name: Install dependencies (prefer ci)
         run: |
           set -e
-            echo "Installing dependencies with npm ci"
+          echo "Installing dependencies with npm ci"
           if ! npm ci; then
             echo "::warning::npm ci failed; falling back to npm install"
             rm -rf node_modules
@@ -76,7 +87,7 @@ jobs:
         run: |
           echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
 
-      - name: Start SSH agent
+      - name: Start SSH agent (load private key)
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.EASSIST_API_SRV }}
@@ -88,28 +99,34 @@ jobs:
           if [ -n "${{ secrets.DEPLOY_HOST_KNOWN_HOSTS || '' }}" ]; then
             echo "${{ secrets.DEPLOY_HOST_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
           else
-            ssh-keyscan -H $DEPLOY_HOST_EXPR >> ~/.ssh/known_hosts
+            ssh-keyscan -p "$DEPLOY_PORT_EXPR" -H "$DEPLOY_HOST_EXPR" >> ~/.ssh/known_hosts
           fi
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Rsync files
+      - name: Install rsync
+        run: sudo apt-get update && sudo apt-get install -y rsync
+
+      - name: Rsync project to server
         run: |
-          RSYNC_RSH="ssh -o StrictHostKeyChecking=yes"
+          RSYNC_RSH="ssh -p ${DEPLOY_PORT_EXPR} -o StrictHostKeyChecking=yes"
           rsync -az --delete \
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='.env' \
             ./ \
-            ${DEPLOY_USER_EXPR}@${DEPLOY_HOST_EXPR}:$DEPLOY_PATH/
+            -e "$RSYNC_RSH" \
+            "${DEPLOY_USER_EXPR}@${DEPLOY_HOST_EXPR}:${DEPLOY_PATH}/"
 
-      - name: Remote deploy
+      - name: Remote deploy (server-side script)
         env:
           BUILD_LABEL: v${{ steps.v.outputs.version }}+ci.${{ github.run_number }}
         run: |
-          ssh -o StrictHostKeyChecking=yes \
-            ${DEPLOY_USER_EXPR}@${DEPLOY_HOST_EXPR} \
-            "EASSIST_BUILD='${BUILD_LABEL}' GIT_SHA='${{ env.GIT_SHA }}' ${DEPLOY_PATH}/bin/deploy.sh"
+          ssh -p "${DEPLOY_PORT_EXPR}" -o StrictHostKeyChecking=yes \
+            "${DEPLOY_USER_EXPR}@${DEPLOY_HOST_EXPR}" \
+            "EASSIST_BUILD='${BUILD_LABEL}' GIT_SHA='${GIT_SHA}' ${DEPLOY_PATH}/bin/deploy.sh"
 
       - name: Summary
         run: |
-          echo "Deployed version: ${{ steps.v.outputs.version }} commit: $GIT_SHA to $DEPLOY_HOST_EXPR as $DEPLOY_USER_EXPR"
+          echo "Deployed version: ${{ steps.v.outputs.version }}"
+          echo "Commit: $GIT_SHA"
+          echo "Target: ${DEPLOY_USER_EXPR}@${DEPLOY_HOST_EXPR}:${DEPLOY_PORT_EXPR} → ${DEPLOY_PATH}"
