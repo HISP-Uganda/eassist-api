@@ -6,6 +6,12 @@ on:
   release:
     types: [ published ]
   workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deployment even if no changes'
+        required: false
+        default: 'false'
+        type: boolean
 
 permissions:
   contents: read
@@ -19,7 +25,7 @@ jobs:
     name: Build and Deploy eAssist API
     runs-on: ubuntu-latest
     if: >-
-      ${{ github.ref == 'refs/heads/releases'
+      ${{ (github.ref == 'refs/heads/releases' && github.event_name == 'push')
           || (github.event_name == 'release' && github.event.release.target_commitish == 'releases')
           || github.event_name == 'workflow_dispatch' }}
     env:
@@ -95,70 +101,141 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=yes \
             ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} \
-            "echo '[Deploy] Starting deployment with systemd at \$(date)'; \
-            set -e; \
-            cd ${{ env.DEPLOY_PATH }} || { echo '[Deploy] Failed to change to deploy directory'; exit 1; }; \
+            "set -euo pipefail
+            echo '[GitHub Actions] Starting direct deployment bypass at \$(date)'
+            echo '[GitHub Actions] Bypassing any local deploy scripts'
+            cd ${{ env.DEPLOY_PATH }} || { echo '[GitHub Actions] Failed to change to deploy directory'; exit 1; }
             
-            echo '[Deploy] Installing dependencies'; \
-            if ! npm ci --only=production --no-audit 2>/dev/null; then \
-              echo '[Deploy] npm ci failed, trying npm install'; \
-              npm install --only=production --no-audit || { echo '[Deploy] Failed to install dependencies'; exit 1; }; \
-            fi; \
+            # Ensure we don't accidentally call the deploy script
+            export PATH=\"/usr/bin:/bin:/usr/local/bin:\$PATH\"
             
-            echo '[Deploy] Running migrations'; \
-            npm run migrate:run 2>/dev/null || npm run migrate 2>/dev/null || echo '[Deploy] No migrations to run or migration failed (continuing)'; \
+            echo '[GitHub Actions] Installing dependencies'
+            if ! npm ci --only=production --no-audit 2>/dev/null; then
+              echo '[GitHub Actions] npm ci failed, trying npm install'
+              npm install --only=production --no-audit || { echo '[GitHub Actions] Failed to install dependencies'; exit 1; }
+            fi
             
-            echo '[Deploy] Creating systemd service file'; \
-            echo '[Unit]' | sudo tee /tmp/eassist-api.service > /dev/null; \
-            echo 'Description=eAssist API Service' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-            echo 'After=network.target' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-            echo '' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-            echo '[Service]' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-            echo 'Type=simple' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-            echo 'User=${{ secrets.DEPLOY_USER || 'gitdeploy' }}' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-            echo 'WorkingDirectory=${{ env.DEPLOY_PATH }}' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-            NPM_PATH=\$(which npm); \
-            echo \"ExecStart=\$NPM_PATH start\" | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-            echo 'Restart=on-failure' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-            echo 'Environment=NODE_ENV=production' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-            echo 'Environment=PORT=8080' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-            echo '' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-            echo '[Install]' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-            echo 'WantedBy=multi-user.target' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
-
-            echo '[Deploy] Stopping any existing service with systemctl'; \
-            if [ -f /etc/systemd/system/eassist-api.service ]; then \
-              sudo systemctl stop eassist-api.service 2>/dev/null || echo '[Deploy] Service was not running'; \
-            fi; \
+            echo '[GitHub Actions] Running migrations'
+            npm run migrate:run 2>/dev/null || npm run migrate 2>/dev/null || echo '[GitHub Actions] No migrations to run or migration failed (continuing)'
             
-            echo '[Deploy] Forcefully cleaning port 8080'; \
-            if command -v fuser >/dev/null 2>&1; then \
-              sudo fuser -k -9 8080/tcp 2>/dev/null || true; \
-            fi; \
-            sleep 2; \
+            echo '[GitHub Actions] Starting PID-based service management'
+            PID_FILE=\"\$HOME/.eassist-api.pid\"
             
-            echo '[Deploy] Installing and starting new systemd service'; \
-            sudo mv /tmp/eassist-api.service /etc/systemd/system/eassist-api.service; \
-            sudo systemctl daemon-reload; \
-            sudo systemctl enable eassist-api.service; \
-            sudo systemctl start eassist-api.service; \
+            # Stop service using PID file
+            if [ -f \"\$PID_FILE\" ]; then
+              OLD_PID=\$(cat \"\$PID_FILE\" 2>/dev/null || echo '')
+              if [ -n \"\$OLD_PID\" ] && kill -0 \"\$OLD_PID\" 2>/dev/null; then
+                echo '[GitHub Actions] Stopping existing service with PID: '\$OLD_PID
+                kill -TERM \"\$OLD_PID\" 2>/dev/null || true
+                sleep 3
+                # Force kill if still running
+                if kill -0 \"\$OLD_PID\" 2>/dev/null; then
+                  echo '[GitHub Actions] Force killing process: '\$OLD_PID
+                  kill -9 \"\$OLD_PID\" 2>/dev/null || true
+                fi
+              fi
+              rm -f \"\$PID_FILE\"
+            fi
             
-            echo '[Deploy] Verifying service startup'; \
-            sleep 5; \
+            # Additional cleanup - kill any remaining processes
+            echo '[GitHub Actions] Cleaning up any remaining processes'
+            if command -v pgrep >/dev/null 2>&1; then
+              # Kill node processes running server.js
+              NODE_PIDS=\$(pgrep -f 'node.*server.js' 2>/dev/null || true)
+              if [ -n \"\$NODE_PIDS\" ]; then
+                echo '[GitHub Actions] Killing node processes: '\$NODE_PIDS
+                echo \"\$NODE_PIDS\" | tr ' ' '\n' | while read pid; do
+                  [ -n \"\$pid\" ] && kill -9 \"\$pid\" 2>/dev/null || true
+                done
+              fi
+              
+              # Kill npm start processes
+              NPM_PIDS=\$(pgrep -f 'npm.*start' 2>/dev/null || true)
+              if [ -n \"\$NPM_PIDS\" ]; then
+                echo '[GitHub Actions] Killing npm processes: '\$NPM_PIDS
+                echo \"\$NPM_PIDS\" | tr ' ' '\n' | while read pid; do
+                  [ -n \"\$pid\" ] && kill -9 \"\$pid\" 2>/dev/null || true
+                done
+              fi
+            fi
             
-            if ! sudo systemctl is-active --quiet eassist-api.service; then \
-              echo '[Deploy] ERROR: Service failed to start via systemd'; \
-              echo '[Deploy] Recent logs from journalctl:'; \
-              sudo journalctl -u eassist-api.service -n 20 --no-pager || echo 'No journalctl logs available'; \
-              exit 1; \
-            fi; \
+            # Wait for processes to fully terminate
+            sleep 5
             
-            if ! lsof -i:8080 >/dev/null; then \
-              echo '[Deploy] ERROR: Service is active but not listening on port 8080'; \
-              echo '[Deploy] Recent logs from journalctl:'; \
-              sudo journalctl -u eassist-api.service -n 20 --no-pager || echo 'No journalctl logs available'; \
-              exit 1; \
-            fi; \
+            # Final port check and cleanup
+            echo '[GitHub Actions] Final port cleanup'
+            if command -v lsof >/dev/null 2>&1; then
+              PORT_PIDS=\$(lsof -ti:8080 2>/dev/null || true)
+              if [ -n \"\$PORT_PIDS\" ]; then
+                echo '[GitHub Actions] Force killing processes on port 8080: '\$PORT_PIDS
+                echo \"\$PORT_PIDS\" | tr ' ' '\n' | while read pid; do
+                  [ -n \"\$pid\" ] && kill -9 \"\$pid\" 2>/dev/null || true
+                done
+                sleep 3
+              fi
+            fi
             
-            echo '[Deploy] ✅ Deployment successful! Service is running via systemd.'; \
-            sudo systemctl status eassist-api.service --no-pager"
+            echo '[GitHub Actions] Starting new service without systemd'
+            # Create log directory
+            LOG_DIR=\"\$HOME/logs\"
+            mkdir -p \"\$LOG_DIR\" 2>/dev/null || LOG_DIR=\"/tmp\"
+            LOG_FILE=\"\$LOG_DIR/eassist-api.log\"
+            
+            # Start the service in background
+            cd ${{ env.DEPLOY_PATH }}
+            NODE_ENV=production PORT=8080 nohup npm start >\"\$LOG_FILE\" 2>&1 &
+            NEW_PID=\$!
+            
+            # Save PID for future deployments
+            echo \$NEW_PID > \"\$PID_FILE\"
+            echo '[GitHub Actions] Started service with PID: '\$NEW_PID
+            echo '[GitHub Actions] Log file: '\$LOG_FILE
+            
+            # Wait and verify service started
+            sleep 5
+            if ! kill -0 \"\$NEW_PID\" 2>/dev/null; then
+              echo '[GitHub Actions] ERROR: Service failed to start'
+              echo '[GitHub Actions] Recent logs:'
+              tail -20 \"\$LOG_FILE\" 2>/dev/null || echo 'No logs available'
+              exit 1
+            fi
+            
+            # Verify service is listening on port 8080
+            echo '[GitHub Actions] Verifying service is ready'
+            READY=0
+            for attempt in \$(seq 1 30); do
+              if command -v nc >/dev/null 2>&1 && nc -z localhost 8080 2>/dev/null; then
+                echo '[GitHub Actions] ✅ Service is responding on port 8080'
+                READY=1
+                break
+              elif command -v lsof >/dev/null 2>&1 && lsof -ti:8080 >/dev/null 2>&1; then
+                echo '[GitHub Actions] ✅ Service is listening on port 8080'
+                READY=1
+                break
+              fi
+              
+              # Check if process is still alive
+              if ! kill -0 \"\$NEW_PID\" 2>/dev/null; then
+                echo '[GitHub Actions] ERROR: Service process died during startup'
+                tail -30 \"\$LOG_FILE\" 2>/dev/null || echo 'No logs available'
+                exit 1
+              fi
+              
+              echo '[GitHub Actions] Waiting for service... ('\$attempt'/30)'
+              sleep 2
+            done
+            
+            if [ \$READY -eq 1 ]; then
+              echo '[GitHub Actions] ✅ Deployment successful at \$(date)'
+              echo '[GitHub Actions] Service PID: '\$NEW_PID
+              echo '[GitHub Actions] PID file: '\$PID_FILE
+              echo '[GitHub Actions] Log file: '\$LOG_FILE
+              echo '[GitHub Actions] No systemd or sudo required!'
+            else
+              echo '[GitHub Actions] ❌ Service startup timeout'
+              echo '[GitHub Actions] Process info:'
+              ps aux | grep \"\$NEW_PID\" 2>/dev/null || echo 'Process not found'
+              echo '[GitHub Actions] Recent logs:'
+              tail -50 \"\$LOG_FILE\" 2>/dev/null || echo 'No logs available'
+              exit 1
+            fi"

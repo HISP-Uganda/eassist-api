@@ -79,63 +79,133 @@ fi
 # Stop all services and processes using port 8080
 echo "[INFO] Stopping all services on port 8080"
 
-# Stop systemd service if it exists
-if command -v systemctl >/dev/null 2>&1; then
-  if systemctl is-active --quiet eassist-api 2>/dev/null; then
-    echo "[INFO] Stopping systemd service: eassist-api"
-    sudo systemctl stop eassist-api || true
-  fi
-fi
+# Use PID file approach instead of systemd
+PID_FILE="$HOME/.eassist-api.pid"
 
-# Kill any processes still using port 8080
-echo "[INFO] Checking for processes on port 8080"
-if command -v lsof >/dev/null 2>&1; then
-  PORT_PIDS=$(sudo lsof -ti:8080 2>/dev/null || true)
-  if [ -n "$PORT_PIDS" ]; then
-    echo "[INFO] Killing processes on port 8080: $PORT_PIDS"
-    echo "$PORT_PIDS" | xargs -r sudo kill -9 || true
-    sleep 2
-  fi
-fi
-
-# Alternative: use fuser if lsof not available
-if command -v fuser >/dev/null 2>&1; then
-  sudo fuser -k 8080/tcp 2>/dev/null || true
-  sleep 1
-fi
-
-# Verify port is free
-if sudo lsof -ti:8080 >/dev/null 2>&1; then
-  echo "[ERROR] Port 8080 is still in use after cleanup!"
-  sudo lsof -i:8080 || true
-  exit 1
-fi
-
-echo "[INFO] Port 8080 is now free"
-
-# Start systemd service
-if command -v systemctl >/dev/null 2>&1; then
-  echo "[INFO] Starting eassist-api service"
-  sudo systemctl start eassist-api
-
-  # Wait for service to be ready
-  echo "[INFO] Waiting for service to start..."
-  for i in {1..15}; do
-    if sudo lsof -ti:8080 >/dev/null 2>&1; then
-      echo "[INFO] Service is now listening on port 8080"
-      sudo systemctl status --no-pager eassist-api || true
-      echo "[OK] Deploy complete"
-      exit 0
+# Stop service using PID file
+if [ -f "$PID_FILE" ]; then
+  OLD_PID=$(cat "$PID_FILE" 2>/dev/null || echo '')
+  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+    echo "[INFO] Stopping existing service with PID: $OLD_PID"
+    kill -TERM "$OLD_PID" 2>/dev/null || true
+    sleep 3
+    # Force kill if still running
+    if kill -0 "$OLD_PID" 2>/dev/null; then
+      echo "[INFO] Force killing process: $OLD_PID"
+      kill -9 "$OLD_PID" 2>/dev/null || true
     fi
-    sleep 1
-  done
-
-  echo "[ERROR] Service failed to start on port 8080"
-  sudo systemctl status --no-pager eassist-api || true
-  sudo journalctl -u eassist-api -n 50 --no-pager || true
-  exit 1
-else
-  echo "[WARN] systemctl not found; ensure the service is started manually"
+  fi
+  rm -f "$PID_FILE"
 fi
 
-echo "[OK] Deploy complete"
+# Additional cleanup - kill any remaining processes owned by current user
+echo "[INFO] Cleaning up any remaining processes"
+if command -v pgrep >/dev/null 2>&1; then
+  # Kill node processes running server.js (only owned by current user)
+  NODE_PIDS=$(pgrep -f 'node.*server.js' 2>/dev/null || true)
+  if [ -n "$NODE_PIDS" ]; then
+    echo "[INFO] Killing node processes: $NODE_PIDS"
+    echo "$NODE_PIDS" | tr ' ' '\n' | while read pid; do
+      [ -n "$pid" ] && kill -9 "$pid" 2>/dev/null || true
+    done
+  fi
+
+  # Kill npm start processes
+  NPM_PIDS=$(pgrep -f 'npm.*start' 2>/dev/null || true)
+  if [ -n "$NPM_PIDS" ]; then
+    echo "[INFO] Killing npm processes: $NPM_PIDS"
+    echo "$NPM_PIDS" | tr ' ' '\n' | while read pid; do
+      [ -n "$pid" ] && kill -9 "$pid" 2>/dev/null || true
+    done
+  fi
+fi
+
+# Wait for processes to fully terminate
+sleep 5
+
+# Final port check and cleanup (only for processes owned by current user)
+echo "[INFO] Final port cleanup"
+if command -v lsof >/dev/null 2>&1; then
+  # Check for processes on port 8080 owned by current user
+  PORT_PIDS=$(lsof -ti:8080 2>/dev/null | while read pid; do
+    if ps -p "$pid" -o user= 2>/dev/null | grep -q "^$(whoami)$"; then
+      echo "$pid"
+    fi
+  done || true)
+  if [ -n "$PORT_PIDS" ]; then
+    echo "[INFO] Force killing user-owned processes on port 8080: $PORT_PIDS"
+    echo "$PORT_PIDS" | tr ' ' '\n' | while read pid; do
+      [ -n "$pid" ] && kill -9 "$pid" 2>/dev/null || true
+    done
+    sleep 3
+  fi
+fi
+
+echo "[INFO] Port cleanup complete"
+
+# Start service using simple process management
+echo "[INFO] Starting eassist-api service"
+
+# Create log directory
+LOG_DIR="$HOME/logs"
+mkdir -p "$LOG_DIR" 2>/dev/null || LOG_DIR="/tmp"
+LOG_FILE="$LOG_DIR/eassist-api.log"
+
+# Start the service in background
+cd /opt/eassist-api
+NODE_ENV=production PORT=8080 nohup npm start >"$LOG_FILE" 2>&1 &
+NEW_PID=$!
+
+# Save PID for future deployments
+echo $NEW_PID > "$PID_FILE"
+echo "[INFO] Started service with PID: $NEW_PID"
+echo "[INFO] Log file: $LOG_FILE"
+
+# Wait and verify service started
+sleep 5
+if ! kill -0 "$NEW_PID" 2>/dev/null; then
+  echo "[ERROR] Service failed to start"
+  echo "[ERROR] Recent logs:"
+  tail -20 "$LOG_FILE" 2>/dev/null || echo 'No logs available'
+  exit 1
+fi
+
+# Verify service is listening on port 8080
+echo "[INFO] Waiting for service to start..."
+READY=0
+for i in {1..30}; do
+  if command -v nc >/dev/null 2>&1 && nc -z localhost 8080 2>/dev/null; then
+    echo "[INFO] ✅ Service is responding on port 8080"
+    READY=1
+    break
+  elif command -v lsof >/dev/null 2>&1 && lsof -ti:8080 >/dev/null 2>&1; then
+    echo "[INFO] ✅ Service is listening on port 8080"
+    READY=1
+    break
+  fi
+
+  # Check if process is still alive
+  if ! kill -0 "$NEW_PID" 2>/dev/null; then
+    echo "[ERROR] Service process died during startup"
+    tail -30 "$LOG_FILE" 2>/dev/null || echo 'No logs available'
+    exit 1
+  fi
+
+  echo "[INFO] Waiting for service... ($i/30)"
+  sleep 2
+done
+
+if [ $READY -eq 1 ]; then
+  echo "[OK] ✅ Deployment successful"
+  echo "[INFO] Service PID: $NEW_PID"
+  echo "[INFO] PID file: $PID_FILE"
+  echo "[INFO] Log file: $LOG_FILE"
+else
+  echo "[ERROR] ❌ Service startup timeout"
+  echo "[ERROR] Process info:"
+  ps aux | grep "$NEW_PID" 2>/dev/null || echo 'Process not found'
+  echo "[ERROR] Recent logs:"
+  tail -50 "$LOG_FILE" 2>/dev/null || echo 'No logs available'
+  exit 1
+fi
+
