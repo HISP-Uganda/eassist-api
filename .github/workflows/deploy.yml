@@ -142,39 +142,80 @@ jobs:
             
             # Method 2: Clean up port 8080 directly (safer than pkill)
             echo '[Deploy] Ensuring port 8080 is free'
-            if command -v lsof >/dev/null 2>&1; then
-              # Find processes using port 8080
-              PORT_PIDS=\$(lsof -ti:8080 2>/dev/null | head -5)
-              if [ -n \"\$PORT_PIDS\" ]; then
-                echo '[Deploy] Found processes on port 8080: '\$PORT_PIDS
-                for pid in \$PORT_PIDS; do
-                  if [ -n \"\$pid\" ]; then
-                    echo '[Deploy] Terminating process '\$pid' (using port 8080)'
-                    kill -TERM \"\$pid\" 2>/dev/null || true
-                  fi
-                done
-                sleep 3
-                # Force kill if still there
-                REMAINING_PIDS=\$(lsof -ti:8080 2>/dev/null | head -5)
-                if [ -n \"\$REMAINING_PIDS\" ]; then
-                  echo '[Deploy] Force killing remaining processes on port 8080'
-                  for pid in \$REMAINING_PIDS; do
-                    if [ -n \"\$pid\" ]; then
-                      kill -9 \"\$pid\" 2>/dev/null || true
+            
+            # Multiple attempts to clean port 8080
+            for cleanup_attempt in $(seq 1 3); do
+              echo '[Deploy] Port cleanup attempt '$cleanup_attempt'/3'
+              
+              # Method 2a: Use lsof to find and kill processes
+              if command -v lsof >/dev/null 2>&1; then
+                PORT_PIDS=$(lsof -ti:8080 2>/dev/null | head -10)
+                if [ -n "$PORT_PIDS" ]; then
+                  echo '[Deploy] Found processes on port 8080: '$PORT_PIDS
+                  for pid in $PORT_PIDS; do
+                    if [ -n "$pid" ]; then
+                      echo '[Deploy] Killing process '$pid' (using port 8080)'
+                      kill -TERM "$pid" 2>/dev/null || true
+                      sleep 1
+                      # Immediate force kill if still there
+                      if kill -0 "$pid" 2>/dev/null; then
+                        echo '[Deploy] Force killing stubborn process '$pid
+                        kill -9 "$pid" 2>/dev/null || true
+                      fi
+                    fi
+                  done
+                else
+                  echo '[Deploy] No processes found on port 8080 via lsof'
+                fi
+              fi
+              
+              # Method 2b: Use fuser for additional cleanup
+              if command -v fuser >/dev/null 2>&1; then
+                echo '[Deploy] Using fuser to clean port 8080'
+                fuser -k 8080/tcp 2>/dev/null || true
+                sleep 1
+                # Force kill with fuser
+                fuser -9 -k 8080/tcp 2>/dev/null || true
+                sleep 1
+              fi
+              
+              # Method 2c: Use netstat + ps to find processes (fallback)
+              if command -v netstat >/dev/null 2>&1 && command -v awk >/dev/null 2>&1; then
+                NETSTAT_PIDS=$(netstat -tulpn 2>/dev/null | grep ':8080 ' | awk '{print $7}' | cut -d'/' -f1 | grep -v '^-$' | head -5)
+                if [ -n "$NETSTAT_PIDS" ]; then
+                  echo '[Deploy] Found processes via netstat: '$NETSTAT_PIDS
+                  for pid in $NETSTAT_PIDS; do
+                    if [ -n "$pid" ] && [ "$pid" != "-" ]; then
+                      echo '[Deploy] Killing netstat-found PID: '$pid
+                      kill -TERM "$pid" 2>/dev/null || true
+                      sleep 1
+                      kill -9 "$pid" 2>/dev/null || true
                     fi
                   done
                 fi
-              else
-                echo '[Deploy] Port 8080 is not in use'
               fi
-            fi
-            
-            # Method 3: Alternative port cleanup using fuser (if available)
-            if command -v fuser >/dev/null 2>&1; then
-              echo '[Deploy] Double-checking port 8080 with fuser'
-              fuser -k 8080/tcp 2>/dev/null || true
-              sleep 1
-            fi
+              
+              # Check if port is now free
+              sleep 2
+              if command -v lsof >/dev/null 2>&1; then
+                if ! lsof -ti:8080 >/dev/null 2>&1; then
+                  echo '[Deploy] Port 8080 successfully freed after attempt '$cleanup_attempt
+                  break
+                else
+                  echo '[Deploy] Port 8080 still in use after attempt '$cleanup_attempt
+                  if [ $cleanup_attempt -eq 3 ]; then
+                    echo '[Deploy] Final attempt - showing what is using port 8080:'
+                    lsof -i:8080 2>/dev/null || true
+                    netstat -tulpn 2>/dev/null | grep 8080 || true
+                  fi
+                fi
+              elif command -v netstat >/dev/null 2>&1; then
+                if ! netstat -ln 2>/dev/null | grep -q ':8080.*LISTEN'; then
+                  echo '[Deploy] Port 8080 freed (verified via netstat)'
+                  break
+                fi
+              fi
+            done
             
             echo '[Deploy] Waiting for complete cleanup'
             sleep 3
