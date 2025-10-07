@@ -147,34 +147,22 @@ jobs:
               NODE_PIDS=$(pgrep -f "node.*server.js" 2>/dev/null || true)
               if [ -n "$NODE_PIDS" ]; then
                 echo "[GitHub Actions] Found node processes: $NODE_PIDS"
-                for pid in $NODE_PIDS; do
+                echo "$NODE_PIDS" | while IFS= read -r pid; do
                   if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
-                    if kill -0 "$pid" 2>/dev/null; then
-                      echo "[GitHub Actions] Killing node process: $pid"
-                      if kill -TERM "$pid" 2>/dev/null; then
-                        echo "[GitHub Actions] Successfully sent TERM signal to $pid"
-                      else
-                        echo "[GitHub Actions] Failed to send TERM signal to $pid (process may have exited)"
-                      fi
-                    else
-                      echo "[GitHub Actions] Process $pid already terminated"
-                    fi
+                    echo "[GitHub Actions] Attempting to kill node process: $pid"
+                    (kill -TERM "$pid" 2>/dev/null && echo "[GitHub Actions] Sent TERM to $pid") || echo "[GitHub Actions] Could not send TERM to $pid (may not exist)"
                   fi
                 done
                 
                 # Wait a moment for graceful termination
                 sleep 3
                 
-                # Force kill any remaining processes
-                for pid in $NODE_PIDS; do
+                # Force kill any remaining processes - use subshell to prevent exit on error
+                echo "$NODE_PIDS" | while IFS= read -r pid; do
                   if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
                     if kill -0 "$pid" 2>/dev/null; then
                       echo "[GitHub Actions] Force killing stubborn node process: $pid"
-                      if kill -9 "$pid" 2>/dev/null; then
-                        echo "[GitHub Actions] Successfully force killed $pid"
-                      else
-                        echo "[GitHub Actions] Could not force kill process $pid (may have already exited)"
-                      fi
+                      (kill -9 "$pid" 2>/dev/null && echo "[GitHub Actions] Force killed $pid") || echo "[GitHub Actions] Could not force kill $pid"
                     fi
                   fi
                 done
@@ -186,33 +174,21 @@ jobs:
               NPM_PIDS=$(pgrep -f "npm.*start" 2>/dev/null || true)
               if [ -n "$NPM_PIDS" ]; then
                 echo "[GitHub Actions] Found npm processes: $NPM_PIDS"
-                for pid in $NPM_PIDS; do
+                echo "$NPM_PIDS" | while IFS= read -r pid; do
                   if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
-                    if kill -0 "$pid" 2>/dev/null; then
-                      echo "[GitHub Actions] Killing npm process: $pid"
-                      if kill -TERM "$pid" 2>/dev/null; then
-                        echo "[GitHub Actions] Successfully sent TERM signal to npm process $pid"
-                      else
-                        echo "[GitHub Actions] Failed to send TERM signal to npm process $pid"
-                      fi
-                    else
-                      echo "[GitHub Actions] NPM process $pid already terminated"
-                    fi
+                    echo "[GitHub Actions] Attempting to kill npm process: $pid"
+                    (kill -TERM "$pid" 2>/dev/null && echo "[GitHub Actions] Sent TERM to npm $pid") || echo "[GitHub Actions] Could not send TERM to npm $pid"
                   fi
                 done
                 
                 sleep 2
                 
                 # Force kill any remaining npm processes
-                for pid in $NPM_PIDS; do
+                echo "$NPM_PIDS" | while IFS= read -r pid; do
                   if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
                     if kill -0 "$pid" 2>/dev/null; then
                       echo "[GitHub Actions] Force killing stubborn npm process: $pid"
-                      if kill -9 "$pid" 2>/dev/null; then
-                        echo "[GitHub Actions] Successfully force killed npm process $pid"
-                      else
-                        echo "[GitHub Actions] Could not force kill npm process $pid"
-                      fi
+                      (kill -9 "$pid" 2>/dev/null && echo "[GitHub Actions] Force killed npm $pid") || echo "[GitHub Actions] Could not force kill npm $pid"
                     fi
                   fi
                 done
@@ -222,6 +198,9 @@ jobs:
             else
               echo "[GitHub Actions] pgrep command not available, skipping process cleanup"
             fi
+            
+            # Ensure we continue regardless of cleanup results
+            echo "[GitHub Actions] Process cleanup completed (continuing deployment)"
             
             # --- begin sudo-free 8080 cleanup ---
             echo "[GitHub Actions] Sudo-free port 8080 cleanup (no elevated privileges)"
