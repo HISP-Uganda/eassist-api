@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: production-deploy
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -74,8 +74,48 @@ jobs:
           fail() { echo "$1" > "$STATUS_FILE"; echo "::error::$1"; exit 1; }
           log() { echo "[Remote] $1"; }
 
+          port_in_use() {
+            # Returns 0 if something is LISTENING on 8080
+            if command -v sudo >/dev/null 2>&1; then
+              sudo lsof -nP -iTCP:8080 -sTCP:LISTEN >/dev/null 2>&1 && return 0 || return 1
+            else
+              lsof -nP -iTCP:8080 -sTCP:LISTEN >/dev/null 2>&1 && return 0 || return 1
+            fi
+          }
+
+          list_port_process() {
+            if command -v sudo >/dev/null 2>&1; then
+              sudo lsof -nP -iTCP:8080 -sTCP:LISTEN || true
+              sudo ss -ltnp 2>/dev/null | grep ':8080' || true
+            else
+              lsof -nP -iTCP:8080 -sTCP:LISTEN || true
+              ss -ltnp 2>/dev/null | grep ':8080' || true
+            fi
+          }
+
+          kill_port_processes() {
+            log "Attempting to free port 8080"
+            list_port_process
+            if command -v sudo >/dev/null 2>&1; then
+              sudo fuser -k 8080/tcp 2>/dev/null || true
+              sudo lsof -nP -iTCP:8080 -sTCP:LISTEN -t 2>/dev/null | xargs -r sudo kill -9 2>/dev/null || true
+            else
+              fuser -k 8080/tcp 2>/dev/null || true
+              lsof -nP -iTCP:8080 -sTCP:LISTEN -t 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+            fi
+            sleep 2
+            if port_in_use; then
+              log "Port still in use after kill; retrying with process table dump"
+              ps -ef | grep -E 'node|npm' | grep -v grep || true
+              list_port_process
+            else
+              log "Port 8080 appears free"
+            fi
+          }
+
           log "Starting deployment job"
           cd "$DEPLOY_PATH" || fail "Cannot cd to $DEPLOY_PATH"
+          log "Current submodule commit: $(git rev-parse HEAD || echo 'unknown')"
 
           log "Checking for Node.js and npm"
           command -v node >/dev/null || fail "Node.js not found on PATH"
@@ -84,137 +124,123 @@ jobs:
 
           if [ ! -f .env ]; then log "Warning: .env file not found. DB connection may fail."; fi
 
+            # Print existing listener BEFORE touching anything
+          if port_in_use; then
+            log "Port 8080 currently occupied BEFORE deploy:"
+            list_port_process
+          else
+            log "Port 8080 free BEFORE deploy"
+          fi
+
           log "Installing/updating production dependencies"
           npm ci --only=production --prefer-offline --no-audit || npm install --only=production
 
           log "Running database migrations"
           npm run migrate:run || npm run migrate || log "Warning: Migration script failed or not found."
 
-          log "Stopping existing eassist-api service"
-          
-          # Kill all processes on port 8080 - be very aggressive
-          for i in 1 2 3; do
-            if lsof -ti tcp:8080 >/dev/null 2>&1; then
-              log "Attempt $i: Killing processes on port 8080"
-              lsof -ti tcp:8080 | xargs -r kill -9 2>/dev/null || true
-              sleep 2
-            else
-              log "Port 8080 is free"
-              break
-            fi
-          done
-          
-          # Also kill any node server.js processes
-          for i in 1 2 3; do
-            if pgrep -f "node.*server.js" >/dev/null 2>&1; then
-              log "Attempt $i: Killing node server.js processes"
-              pkill -9 -f "node.*server.js" 2>/dev/null || true
-              sleep 2
-            else
-              log "No node server.js processes found"
-              break
-            fi
-          done
-          
-          # Try systemd if available
-          if command -v systemctl >/dev/null && systemctl list-units --type=service | grep -q "eassist-api" 2>/dev/null; then
-            if sudo -n systemctl stop eassist-api 2>/dev/null; then
-              log "Service stopped via systemd"
-              sleep 2
-            fi
-          fi
-          
-          # Try pm2 if available
-          if command -v pm2 >/dev/null; then
-            pm2 delete eassist-api 2>/dev/null || true
-            pm2 kill 2>/dev/null || true
+          log "Stopping service / processes"
+          if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service --all | grep -q "eassist-api" 2>/dev/null; then
+            log "Stopping systemd service eassist-api"
+            sudo -n systemctl stop eassist-api 2>/dev/null || true
+            sudo -n systemctl kill eassist-api 2>/dev/null || true
+            sudo -n systemctl reset-failed eassist-api 2>/dev/null || true
             sleep 2
           fi
-          
-          # Final aggressive cleanup - kill everything that might be holding port 8080
-          fuser -k 8080/tcp 2>/dev/null || true
-          sleep 3
-          
-          # Verify port is actually free
-          if lsof -ti tcp:8080 >/dev/null 2>&1; then
-            log "ERROR: Port 8080 still in use after all kill attempts!"
-            lsof -ti tcp:8080 | xargs -r ps -fp || true
-            fail "Cannot free port 8080"
-          fi
-          
-          log "Confirmed: Port 8080 is now free"
 
-          log "Starting the service"
+          # Multiple aggressive cleanup passes
+          for i in 1 2 3; do
+            if port_in_use; then
+              log "Cleanup pass $i: killing port listeners"
+              kill_port_processes
+            else
+              break
+            fi
+          done
+
+          # Final assertion
+          if port_in_use; then
+            list_port_process
+            fail "Cannot free port 8080 after multiple attempts"
+          fi
+          log "Confirmed port 8080 free prior to start"
+
+          START_METHOD="none"
           STARTED=0
-          
-          # Try systemd first
-          if command -v systemctl >/dev/null && systemctl list-units --type=service --all | grep -q "eassist-api" 2>/dev/null; then
-            if sudo -n systemctl start eassist-api 2>/dev/null; then
+
+          if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service --all | grep -q "eassist-api" 2>/dev/null; then
+            log "Starting via systemd"
+            sudo -n systemctl start eassist-api 2>/dev/null || true
+            sleep 3
+            if port_in_use; then
               STARTED=1
-              log "Service started via systemd"
+              START_METHOD="systemd"
+              log "Service listening on 8080 via systemd"
+            else
+              log "Systemd start attempted but port not in LISTEN state"
+              sudo -n systemctl status eassist-api --no-pager || true
             fi
           fi
-          
-          # Try pm2
-          if [ "$STARTED" -eq 0 ] && command -v pm2 >/dev/null; then
-            pm2 start npm --name eassist-api -- start && STARTED=1 && log "Service started via pm2"
-          fi
-          
-          # Fallback to nohup npm start
+
+          # Only attempt pm2 / nohup if NO systemd unit or systemd failed
           if [ "$STARTED" -eq 0 ]; then
-            log "Starting via nohup npm start (production mode)"
-            
-            # Ensure log directory exists
-            sudo mkdir -p /var/log 2>/dev/null || mkdir -p /var/log 2>/dev/null || true
-            sudo touch /var/log/eassist-api.out 2>/dev/null || touch /var/log/eassist-api.out 2>/dev/null || true
-            sudo chown $USER /var/log/eassist-api.out 2>/dev/null || true
-            
-            # Start the service in background
+            if command -v pm2 >/dev/null 2>&1; then
+              log "Attempting pm2 start"
+              pm2 delete eassist-api 2>/dev/null || true
+              pm2 start npm --name eassist-api -- start 2>/dev/null || true
+              sleep 4
+              if port_in_use; then
+                STARTED=1
+                START_METHOD="pm2"
+                log "Service listening on 8080 via pm2"
+              else
+                log "pm2 start failed to bind port"
+                pm2 logs eassist-api --lines 20 2>/dev/null || true
+              fi
+            fi
+          fi
+
+          if [ "$STARTED" -eq 0 ]; then
+            log "Falling back to raw nohup"
+            # Double-check port still free right before
+            if port_in_use; then
+              list_port_process
+              fail "Race: port became used just before nohup start"
+            fi
+            sudo mkdir -p /var/log 2>/dev/null || true
+            sudo touch /var/log/eassist-api.out 2>/dev/null || true
+            sudo chown "$USER" /var/log/eassist-api.out 2>/dev/null || true
             NODE_ENV=production nohup npm start >/var/log/eassist-api.out 2>&1 &
             NEW_PID=$!
-            log "Started npm with PID: $NEW_PID"
-            
-            # Wait and verify
+            log "Spawned PID $NEW_PID (nohup)"
             sleep 5
-            
-            if lsof -ti tcp:8080 >/dev/null 2>&1; then
+            if port_in_use; then
               STARTED=1
-              log "Service started successfully via nohup npm start"
-              log "Logs: /var/log/eassist-api.out"
-              log "PID: $(lsof -ti tcp:8080)"
+              START_METHOD="nohup"
+              log "Service listening on 8080 via nohup (PID: $(sudo lsof -nP -iTCP:8080 -sTCP:LISTEN -t 2>/dev/null | tr '\n' ' '))"
             else
-              log "Port 8080 not listening after 5 seconds, checking logs and process..."
-              ps -fp $NEW_PID 2>/dev/null || log "Process $NEW_PID no longer running"
-              if [ -f /var/log/eassist-api.out ]; then
-                log "Last 30 lines of log:"
-                tail -n 30 /var/log/eassist-api.out
-              fi
-              fail "Failed to start service - port 8080 not listening after npm start"
+              log "Failed to bind after nohup start. Tail log:"
+              tail -n 60 /var/log/eassist-api.out 2>/dev/null || true
+              fail "Service failed to start (nohup)"
             fi
           fi
 
           if [ "$STARTED" -eq 0 ]; then
-            fail "All start methods failed."
+            fail "All start strategies failed"
           fi
 
-          log "Deployment script finished successfully"
+          log "Startup method: $START_METHOD"
+          log "Active listeners:"
+          list_port_process
+
           echo "OK" > "$STATUS_FILE"
+          log "Deployment script finished successfully"
           EOF
 
-      - name: Evaluate deployment result
+      - name: Check deployment status
+        if: always()
         run: |
-          set -euo pipefail
           if [ "${{ steps.remote_deploy.outcome }}" != "success" ]; then
-            STATUS_CONTENT=$(ssh -i ~/.ssh/id_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" "cat '${DEPLOY_PATH}/remote_deploy_status.txt'" || echo "Could not read remote status file.")
-            echo "::error::Deployment script failed. Reason: $STATUS_CONTENT"
-            exit 1
+            echo "::error::Deployment failed. Check the logs above for details.";
+            exit 1;
           fi
-          echo "Deployment successful."
-
-      - name: Summary
-        run: |
-          {
-            echo "Deployment successful";
-            echo "Commit: $GIT_SHA";
-            echo "Target: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PORT} -> ${DEPLOY_PATH}";
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployment completed successfully."
