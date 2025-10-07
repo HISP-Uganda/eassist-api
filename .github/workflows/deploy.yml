@@ -143,20 +143,61 @@ jobs:
               # Kill node processes running server.js
               NODE_PIDS=\$(pgrep -f 'node.*server.js' 2>/dev/null || true)
               if [ -n \"\$NODE_PIDS\" ]; then
-                echo '[GitHub Actions] Killing node processes: '\$NODE_PIDS
+                echo '[GitHub Actions] Found node processes: '\$NODE_PIDS
                 echo \"\$NODE_PIDS\" | tr ' ' '\n' | while read pid; do
-                  [ -n \"\$pid\" ] && kill -9 \"\$pid\" 2>/dev/null || true
+                  if [ -n \"\$pid\" ] && [ \"\$pid\" -gt 0 ] 2>/dev/null; then
+                    if kill -0 \"\$pid\" 2>/dev/null; then
+                      echo '[GitHub Actions] Killing node process: '\$pid
+                      kill -TERM \"\$pid\" 2>/dev/null || echo '[GitHub Actions] Could not terminate process '\$pid' (may have already exited)'
+                    else
+                      echo '[GitHub Actions] Process '\$pid' already terminated'
+                    fi
+                  fi
                 done
+                # Wait a moment for graceful termination
+                sleep 2
+                # Force kill any remaining
+                echo \"\$NODE_PIDS\" | tr ' ' '\n' | while read pid; do
+                  if [ -n \"\$pid\" ] && [ \"\$pid\" -gt 0 ] 2>/dev/null; then
+                    if kill -0 \"\$pid\" 2>/dev/null; then
+                      echo '[GitHub Actions] Force killing stubborn node process: '\$pid
+                      kill -9 \"\$pid\" 2>/dev/null || echo '[GitHub Actions] Could not force kill process '\$pid
+                    fi
+                  fi
+                done
+              else
+                echo '[GitHub Actions] No node server processes found'
               fi
               
               # Kill npm start processes
               NPM_PIDS=\$(pgrep -f 'npm.*start' 2>/dev/null || true)
               if [ -n \"\$NPM_PIDS\" ]; then
-                echo '[GitHub Actions] Killing npm processes: '\$NPM_PIDS
+                echo '[GitHub Actions] Found npm processes: '\$NPM_PIDS
                 echo \"\$NPM_PIDS\" | tr ' ' '\n' | while read pid; do
-                  [ -n \"\$pid\" ] && kill -9 \"\$pid\" 2>/dev/null || true
+                  if [ -n \"\$pid\" ] && [ \"\$pid\" -gt 0 ] 2>/dev/null; then
+                    if kill -0 \"\$pid\" 2>/dev/null; then
+                      echo '[GitHub Actions] Killing npm process: '\$pid
+                      kill -TERM \"\$pid\" 2>/dev/null || echo '[GitHub Actions] Could not terminate npm process '\$pid
+                    else
+                      echo '[GitHub Actions] NPM process '\$pid' already terminated'
+                    fi
+                  fi
                 done
+                sleep 2
+                # Force kill any remaining npm processes
+                echo \"\$NPM_PIDS\" | tr ' ' '\n' | while read pid; do
+                  if [ -n \"\$pid\" ] && [ \"\$pid\" -gt 0 ] 2>/dev/null; then
+                    if kill -0 \"\$pid\" 2>/dev/null; then
+                      echo '[GitHub Actions] Force killing stubborn npm process: '\$pid
+                      kill -9 \"\$pid\" 2>/dev/null || echo '[GitHub Actions] Could not force kill npm process '\$pid
+                    fi
+                  fi
+                done
+              else
+                echo '[GitHub Actions] No npm start processes found'
               fi
+            else
+              echo '[GitHub Actions] pgrep command not available, skipping process cleanup'
             fi
             
             # Wait for processes to fully terminate
