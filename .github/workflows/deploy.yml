@@ -111,7 +111,7 @@ jobs:
             # Create a PID file location
             PID_FILE=\"/tmp/eassist-api.pid\"
             
-            # Try to read existing PID and stop gracefully
+            # Method 1: Try to read existing PID and stop gracefully
             if [ -f \"\$PID_FILE\" ]; then
               OLD_PID=\$(cat \"\$PID_FILE\" 2>/dev/null || echo '')
               if [ -n \"\$OLD_PID\" ] && kill -0 \"\$OLD_PID\" 2>/dev/null; then
@@ -132,37 +132,48 @@ jobs:
                   echo '[Deploy] Force killing stubborn process'
                   kill -9 \"\$OLD_PID\" 2>/dev/null || true
                 fi
+              else
+                echo '[Deploy] PID file exists but process not running'
               fi
               rm -f \"\$PID_FILE\"
+            else
+              echo '[Deploy] No PID file found'
             fi
             
-            # Alternative cleanup method - use pkill with safer options
-            echo '[Deploy] Cleaning up any remaining processes'
-            # Use a more targeted approach
-            if command -v pkill >/dev/null 2>&1; then
-              # Kill processes by name pattern, but be more careful
-              pkill -f 'eassist.*server' 2>/dev/null || true
-              sleep 2
-              pkill -9 -f 'eassist.*server' 2>/dev/null || true
+            # Method 2: Clean up port 8080 directly (safer than pkill)
+            echo '[Deploy] Ensuring port 8080 is free'
+            if command -v lsof >/dev/null 2>&1; then
+              # Find processes using port 8080
+              PORT_PIDS=\$(lsof -ti:8080 2>/dev/null | head -5)
+              if [ -n \"\$PORT_PIDS\" ]; then
+                echo '[Deploy] Found processes on port 8080: '\$PORT_PIDS
+                for pid in \$PORT_PIDS; do
+                  if [ -n \"\$pid\" ]; then
+                    echo '[Deploy] Terminating process '\$pid' (using port 8080)'
+                    kill -TERM \"\$pid\" 2>/dev/null || true
+                  fi
+                done
+                sleep 3
+                # Force kill if still there
+                REMAINING_PIDS=\$(lsof -ti:8080 2>/dev/null | head -5)
+                if [ -n \"\$REMAINING_PIDS\" ]; then
+                  echo '[Deploy] Force killing remaining processes on port 8080'
+                  for pid in \$REMAINING_PIDS; do
+                    if [ -n \"\$pid\" ]; then
+                      kill -9 \"\$pid\" 2>/dev/null || true
+                    fi
+                  done
+                fi
+              else
+                echo '[Deploy] Port 8080 is not in use'
+              fi
             fi
             
-            # Clean up port 8080 more safely
-            echo '[Deploy] Checking port 8080'
+            # Method 3: Alternative port cleanup using fuser (if available)
             if command -v fuser >/dev/null 2>&1; then
-              # fuser is often more reliable than lsof for port cleanup
+              echo '[Deploy] Double-checking port 8080 with fuser'
               fuser -k 8080/tcp 2>/dev/null || true
               sleep 1
-            elif command -v lsof >/dev/null 2>&1; then
-              # Fallback to lsof method but with timeout
-              timeout 5 bash -c '
-                PORT_PIDS=\$(lsof -ti:8080 2>/dev/null || true)
-                if [ -n \"\$PORT_PIDS\" ]; then
-                  echo \"Killing processes on port 8080: \$PORT_PIDS\"
-                  echo \"\$PORT_PIDS\" | xargs -r kill -TERM 2>/dev/null || true
-                  sleep 2
-                  echo \"\$PORT_PIDS\" | xargs -r kill -9 2>/dev/null || true
-                fi
-              ' 2>/dev/null || true
             fi
             
             echo '[Deploy] Waiting for complete cleanup'
@@ -171,8 +182,9 @@ jobs:
             # Final verification
             if command -v lsof >/dev/null 2>&1 && lsof -ti:8080 >/dev/null 2>&1; then
               echo '[Deploy] WARNING: Port 8080 still occupied, but continuing'
+              lsof -i:8080 2>/dev/null || true
             else
-              echo '[Deploy] Port 8080 is free'
+              echo '[Deploy] Port 8080 is free and ready'
             fi
             
             echo '[Deploy] Starting new service'
