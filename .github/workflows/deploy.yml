@@ -223,84 +223,73 @@ jobs:
               echo '[GitHub Actions] pgrep command not available, skipping process cleanup'
             fi
             
-            # Comprehensive port 8080 cleanup
+            # Comprehensive port 8080 cleanup  
             echo '[GitHub Actions] Comprehensive port 8080 cleanup'
+            set +e  # Disable strict error handling for cleanup
+            
+            # First, check what's using port 8080
             if command -v lsof >/dev/null 2>&1; then
-              # Check what's using port 8080
-              echo '[GitHub Actions] Checking what is using port 8080:'
-              lsof -i:8080 2>/dev/null || echo '[GitHub Actions] No processes found using lsof'
+              echo '[GitHub Actions] Checking processes using port 8080:'
+              lsof -i:8080 2>/dev/null && echo '[GitHub Actions] Found processes above' || echo '[GitHub Actions] No processes found using lsof'
               
-              # Kill all processes using port 8080
-              PORT_PIDS=$(lsof -ti:8080 2>/dev/null || true)
-              if [ -n "$PORT_PIDS" ]; then
-                echo '[GitHub Actions] Found processes using port 8080: '$PORT_PIDS
-                for pid in $PORT_PIDS; do
-                  if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
-                    if kill -0 "$pid" 2>/dev/null; then
-                      # Get process info for logging
-                      PROCESS_INFO=$(ps -p "$pid" -o pid,ppid,cmd --no-headers 2>/dev/null || echo "PID $pid")
-                      echo '[GitHub Actions] Killing process using port 8080: '$PROCESS_INFO
-                      
-                      # Try graceful termination first
-                      if kill -TERM "$pid" 2>/dev/null; then
-                        echo '[GitHub Actions] Sent TERM signal to '$pid
-                      else
-                        echo '[GitHub Actions] Could not send TERM to '$pid
-                      fi
-                    else
-                      echo '[GitHub Actions] Process '$pid' already terminated'
-                    fi
+              # Get PIDs using port 8080
+              PORT_PIDS=\$(lsof -ti:8080 2>/dev/null)
+              if [ -n \"\$PORT_PIDS\" ]; then
+                echo '[GitHub Actions] Killing processes on port 8080: '\$PORT_PIDS
+                # Kill each PID
+                echo \"\$PORT_PIDS\" | while read -r pid; do
+                  if [ -n \"\$pid\" ]; then
+                    echo '[GitHub Actions] Killing PID: '\$pid
+                    kill -9 \"\$pid\" 2>/dev/null || echo '[GitHub Actions] Could not kill '\$pid
                   fi
                 done
-                
-                # Wait for graceful termination
-                sleep 5
-                
-                # Force kill any remaining processes on port 8080
-                PORT_PIDS_REMAINING=$(lsof -ti:8080 2>/dev/null || true)
-                if [ -n "$PORT_PIDS_REMAINING" ]; then
-                  echo '[GitHub Actions] Force killing remaining processes on port 8080: '$PORT_PIDS_REMAINING
-                  for pid in $PORT_PIDS_REMAINING; do
-                    if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
-                      if kill -0 "$pid" 2>/dev/null; then
-                        PROCESS_INFO=$(ps -p "$pid" -o pid,ppid,cmd --no-headers 2>/dev/null || echo "PID $pid")
-                        echo '[GitHub Actions] Force killing: '$PROCESS_INFO
-                        if kill -9 "$pid" 2>/dev/null; then
-                          echo '[GitHub Actions] Successfully force killed '$pid
-                        else
-                          echo '[GitHub Actions] Could not force kill '$pid
-                        fi
-                      fi
-                    fi
-                  done
-                fi
-              else
-                echo '[GitHub Actions] No processes found using port 8080'
+                sleep 3
               fi
-            elif command -v ss >/dev/null 2>&1; then
-              # Alternative using ss command
-              echo '[GitHub Actions] Using ss to check port 8080:'
-              ss -tlnp | grep :8080 || echo '[GitHub Actions] No processes found using ss'
-              
-              # Try to extract PIDs from ss output and kill them
-              SS_PIDS=$(ss -tlnp | grep :8080 | grep -o 'pid=[0-9]*' | cut -d= -f2 2>/dev/null || true)
-              if [ -n "$SS_PIDS" ]; then
-                echo '[GitHub Actions] Found PIDs using port 8080 via ss: '$SS_PIDS
-                for pid in $SS_PIDS; do
-                  if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
-                    if kill -0 "$pid" 2>/dev/null; then
-                      echo '[GitHub Actions] Killing process '$pid' found via ss'
-                      kill -9 "$pid" 2>/dev/null || echo '[GitHub Actions] Could not kill '$pid
-                    fi
-                  fi
-                done
-              fi
-            else
-              echo '[GitHub Actions] Neither lsof nor ss available for port checking'
             fi
             
-            # Re-enable strict error handling
-            set -euo pipefail
+            # Alternative cleanup using netstat/ss
+            if command -v ss >/dev/null 2>&1; then
+              echo '[GitHub Actions] Using ss to find port 8080 processes:'
+              SS_OUTPUT=\$(ss -tlnp 2>/dev/null | grep :8080)
+              if [ -n \"\$SS_OUTPUT\" ]; then
+                echo '[GitHub Actions] SS output: '\$SS_OUTPUT
+                # Extract PIDs from ss output
+                echo \"\$SS_OUTPUT\" | grep -o 'pid=[0-9]*' | cut -d= -f2 | while read -r pid; do
+                  if [ -n \"\$pid\" ]; then
+                    echo '[GitHub Actions] Killing PID from ss: '\$pid
+                    kill -9 \"\$pid\" 2>/dev/null || echo '[GitHub Actions] Could not kill '\$pid
+                  fi
+                done
+                sleep 2
+              fi
+            fi
+            
+            # Final aggressive cleanup - kill any process listening on 8080
+            if command -v fuser >/dev/null 2>&1; then
+              echo '[GitHub Actions] Using fuser to kill port 8080 processes'
+              fuser -k 8080/tcp 2>/dev/null || echo '[GitHub Actions] fuser found no processes'
+              sleep 2
+            fi
+            
+            # Wait and verify port is free
+            sleep 3
+            echo '[GitHub Actions] Verifying port 8080 is free'
+            if command -v lsof >/dev/null 2>&1; then
+              REMAINING=\$(lsof -ti:8080 2>/dev/null)
+              if [ -n \"\$REMAINING\" ]; then
+                echo '[GitHub Actions] WARNING: Processes still using port 8080: '\$REMAINING
+                echo '[GitHub Actions] Final emergency cleanup...'
+                echo \"\$REMAINING\" | while read -r pid; do
+                  [ -n \"\$pid\" ] && kill -9 \"\$pid\" 2>/dev/null
+                done
+                sleep 3
+              else
+                echo '[GitHub Actions] Port 8080 is now free'
+              fi
+            fi
+            
+            set -euo pipefail  # Re-enable strict error handling
+            
             echo '[GitHub Actions] Process cleanup completed'
             
             # Wait for processes to fully terminate and port to be released

@@ -123,21 +123,64 @@ fi
 # Wait for processes to fully terminate
 sleep 5
 
-# Final port check and cleanup (only for processes owned by current user)
-echo "[INFO] Final port cleanup"
+# Final port check and cleanup (comprehensive approach)
+echo "[INFO] Comprehensive port 8080 cleanup"
 if command -v lsof >/dev/null 2>&1; then
-  # Check for processes on port 8080 owned by current user
-  PORT_PIDS=$(lsof -ti:8080 2>/dev/null | while read pid; do
-    if ps -p "$pid" -o user= 2>/dev/null | grep -q "^$(whoami)$"; then
-      echo "$pid"
-    fi
-  done || true)
+  # Check what's using port 8080
+  echo "[INFO] Checking what is using port 8080:"
+  lsof -i:8080 2>/dev/null && echo "[INFO] Found processes above" || echo "[INFO] No processes found using lsof"
+
+  # Kill all processes using port 8080
+  PORT_PIDS=$(lsof -ti:8080 2>/dev/null || true)
   if [ -n "$PORT_PIDS" ]; then
-    echo "[INFO] Force killing user-owned processes on port 8080: $PORT_PIDS"
-    echo "$PORT_PIDS" | tr ' ' '\n' | while read pid; do
-      [ -n "$pid" ] && kill -9 "$pid" 2>/dev/null || true
+    echo "[INFO] Killing all processes on port 8080: $PORT_PIDS"
+    echo "$PORT_PIDS" | while read -r pid; do
+      if [ -n "$pid" ]; then
+        echo "[INFO] Killing PID: $pid"
+        kill -9 "$pid" 2>/dev/null || echo "[INFO] Could not kill $pid"
+      fi
     done
     sleep 3
+  fi
+fi
+
+# Alternative cleanup using ss
+if command -v ss >/dev/null 2>&1; then
+  echo "[INFO] Using ss to find port 8080 processes:"
+  SS_OUTPUT=$(ss -tlnp 2>/dev/null | grep :8080 || true)
+  if [ -n "$SS_OUTPUT" ]; then
+    echo "[INFO] SS output: $SS_OUTPUT"
+    echo "$SS_OUTPUT" | grep -o 'pid=[0-9]*' | cut -d= -f2 | while read -r pid; do
+      if [ -n "$pid" ]; then
+        echo "[INFO] Killing PID from ss: $pid"
+        kill -9 "$pid" 2>/dev/null || echo "[INFO] Could not kill $pid"
+      fi
+    done
+    sleep 2
+  fi
+fi
+
+# Final aggressive cleanup using fuser
+if command -v fuser >/dev/null 2>&1; then
+  echo "[INFO] Using fuser to kill port 8080 processes"
+  fuser -k 8080/tcp 2>/dev/null || echo "[INFO] fuser found no processes"
+  sleep 2
+fi
+
+# Verify port is free
+sleep 3
+echo "[INFO] Verifying port 8080 is free"
+if command -v lsof >/dev/null 2>&1; then
+  REMAINING=$(lsof -ti:8080 2>/dev/null || true)
+  if [ -n "$REMAINING" ]; then
+    echo "[WARNING] Processes still using port 8080: $REMAINING"
+    echo "[INFO] Final emergency cleanup..."
+    echo "$REMAINING" | while read -r pid; do
+      [ -n "$pid" ] && kill -9 "$pid" 2>/dev/null
+    done
+    sleep 3
+  else
+    echo "[INFO] Port 8080 is now free"
   fi
 fi
 
