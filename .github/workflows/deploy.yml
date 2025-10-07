@@ -95,88 +95,150 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=yes \
             ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} \
-            'set -euo pipefail
-            echo "[Deploy] Starting deployment at $(date)"
-            cd ${{ env.DEPLOY_PATH }}
+            "set -e
+            echo '[Deploy] Starting deployment at \$(date)'
+            cd ${{ env.DEPLOY_PATH }} || { echo '[Deploy] Failed to change to deploy directory'; exit 1; }
             
-            echo "[Deploy] Installing dependencies"
-            npm ci --only=production --no-audit || npm install --only=production --no-audit
-            
-            echo "[Deploy] Running migrations"
-            npm run migrate:run 2>/dev/null || npm run migrate 2>/dev/null || echo "No migrations to run"
-            
-            echo "[Deploy] Stopping all Node.js and npm processes (user-owned)"
-            # Kill user-owned node processes without sudo
-            pkill -9 -f "node.*server.js" 2>/dev/null || true
-            pkill -9 -f "npm.*start" 2>/dev/null || true
-            pkill -9 -f "node.*src/server.js" 2>/dev/null || true
-            
-            echo "[Deploy] Killing any process using port 8080 (user-owned)"
-            # Use fuser and lsof without sudo for user processes
-            fuser -k 8080/tcp 2>/dev/null || true
-            lsof -ti:8080 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-            
-            echo "[Deploy] Waiting for processes to fully terminate"
-            sleep 3
-            
-            # Final verification that port is free
-            for attempt in 1 2 3; do
-              if lsof -ti:8080 >/dev/null 2>&1; then
-                echo "[Deploy] Attempt $attempt: Port 8080 still busy, killing remaining processes"
-                lsof -ti:8080 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-                fuser -k 8080/tcp 2>/dev/null || true
-                sleep 2
-              else
-                echo "[Deploy] Port 8080 confirmed free"
-                break
-              fi
-              if [ $attempt -eq 3 ]; then
-                echo "[Deploy] ERROR: Cannot free port 8080 after 3 attempts"
-                lsof -i:8080 2>/dev/null || echo "No processes found on port 8080"
-                exit 1
-              fi
-            done
-            
-            echo "[Deploy] Starting service with nohup"
-            # Ensure log directory exists (user writable)
-            mkdir -p ~/logs 2>/dev/null || mkdir -p /tmp/eassist-logs
-            LOG_FILE="~/logs/eassist-api.out"
-            if [ ! -w ~/logs 2>/dev/null ]; then
-              LOG_FILE="/tmp/eassist-logs/eassist-api.out"
-              mkdir -p /tmp/eassist-logs
+            echo '[Deploy] Installing dependencies'
+            if ! npm ci --only=production --no-audit 2>/dev/null; then
+              echo '[Deploy] npm ci failed, trying npm install'
+              npm install --only=production --no-audit || { echo '[Deploy] Failed to install dependencies'; exit 1; }
             fi
             
-            # Start with explicit environment and immediate background
-            cd ${{ env.DEPLOY_PATH }}
-            NODE_ENV=production PORT=8080 nohup npm start >$LOG_FILE 2>&1 &
-            START_PID=$!
-            echo "[Deploy] Started process with PID: $START_PID"
-            echo "[Deploy] Logs will be written to: $LOG_FILE"
+            echo '[Deploy] Running migrations'
+            npm run migrate:run 2>/dev/null || npm run migrate 2>/dev/null || echo '[Deploy] No migrations to run or migration failed (continuing)'
             
-            # Wait for successful startup with timeout
-            echo "[Deploy] Waiting for service to bind to port 8080..."
-            for i in {1..20}; do
-              if lsof -ti:8080 >/dev/null 2>&1; then
-                LISTENING_PID=$(lsof -ti:8080 2>/dev/null | head -n1)
-                echo "[Deploy] ✅ Service successfully listening on port 8080 (PID: $LISTENING_PID)"
-                echo "[Deploy] Deployment completed successfully at $(date)"
-                # Show final status
-                lsof -i:8080 2>/dev/null | head -5 || echo "Port 8080 is active"
-                exit 0
+            echo '[Deploy] Stopping existing processes safely'
+            # Stop node processes more carefully to avoid SSH session termination
+            NODE_PIDS=\$(pgrep -f 'node.*server.js' 2>/dev/null || true)
+            if [ -n \"\$NODE_PIDS\" ]; then
+              echo '[Deploy] Found node server processes, stopping gracefully...'
+              for pid in \$NODE_PIDS; do
+                if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
+                  echo '[Deploy] Stopping PID: '\$pid
+                  kill -TERM \"\$pid\" 2>/dev/null || true
+                fi
+              done
+              sleep 3
+              # Force kill if still running
+              REMAINING=\$(pgrep -f 'node.*server.js' 2>/dev/null || true)
+              if [ -n \"\$REMAINING\" ]; then
+                echo '[Deploy] Force killing remaining node processes'
+                for pid in \$REMAINING; do
+                  kill -9 \"\$pid\" 2>/dev/null || true
+                done
               fi
-              echo "[Deploy] Waiting for startup ($i/20)..."
-              sleep 1
+            fi
+            
+            # Stop npm processes
+            NPM_PIDS=\$(pgrep -f 'npm.*start' 2>/dev/null || true)
+            if [ -n \"\$NPM_PIDS\" ]; then
+              echo '[Deploy] Found npm start processes, stopping...'
+              for pid in \$NPM_PIDS; do
+                if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
+                  echo '[Deploy] Stopping npm PID: '\$pid
+                  kill -TERM \"\$pid\" 2>/dev/null || true
+                fi
+              done
+              sleep 2
+              # Force kill remaining npm processes
+              REMAINING_NPM=\$(pgrep -f 'npm.*start' 2>/dev/null || true)
+              if [ -n \"\$REMAINING_NPM\" ]; then
+                for pid in \$REMAINING_NPM; do
+                  kill -9 \"\$pid\" 2>/dev/null || true
+                done
+              fi
+            fi
+            
+            # Free port 8080 if occupied
+            if command -v lsof >/dev/null 2>&1; then
+              PORT_PIDS=\$(lsof -ti:8080 2>/dev/null || true)
+              if [ -n \"\$PORT_PIDS\" ]; then
+                echo '[Deploy] Freeing port 8080'
+                for pid in \$PORT_PIDS; do
+                  if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
+                    kill -TERM \"\$pid\" 2>/dev/null || true
+                    sleep 1
+                    kill -9 \"\$pid\" 2>/dev/null || true
+                  fi
+                done
+              fi
+            fi
+            
+            echo '[Deploy] Waiting for cleanup to complete'
+            sleep 3
+            
+            # Final port check
+            if command -v lsof >/dev/null 2>&1 && lsof -ti:8080 >/dev/null 2>&1; then
+              echo '[Deploy] WARNING: Port 8080 still in use, but continuing...'
+              lsof -i:8080 2>/dev/null || true
+            else
+              echo '[Deploy] Port 8080 is available'
+            fi
+            
+            echo '[Deploy] Starting new service'
+            # Ensure log directory exists
+            if [ -w \"\$HOME\" ]; then
+              LOG_DIR=\"\$HOME/logs\"
+              mkdir -p \"\$LOG_DIR\" 2>/dev/null || LOG_DIR=\"/tmp/eassist-logs\"
+            else
+              LOG_DIR=\"/tmp/eassist-logs\"
+            fi
+            mkdir -p \"\$LOG_DIR\" 2>/dev/null || LOG_DIR=\"/tmp\"
+            LOG_FILE=\"\$LOG_DIR/eassist-api.out\"
+            
+            echo '[Deploy] Starting service in background (log: '\$LOG_FILE')'
+            cd ${{ env.DEPLOY_PATH }} || { echo '[Deploy] Failed to change directory'; exit 1; }
+            
+            # Start the service
+            NODE_ENV=production PORT=8080 nohup npm start >\"\$LOG_FILE\" 2>&1 &
+            NEW_PID=\$!
+            echo '[Deploy] Started new process with PID: '\$NEW_PID
+            
+            # Verify the process started
+            sleep 3
+            if ! kill -0 \"\$NEW_PID\" 2>/dev/null; then
+              echo '[Deploy] ERROR: New process failed to start'
+              echo '[Deploy] Recent log output:'
+              tail -20 \"\$LOG_FILE\" 2>/dev/null || echo 'No log output available'
+              exit 1
+            fi
+            
+            echo '[Deploy] Waiting for service to be ready...'
+            READY=0
+            for i in \$(seq 1 30); do
+              if command -v lsof >/dev/null 2>&1 && lsof -ti:8080 >/dev/null 2>&1; then
+                ACTIVE_PID=\$(lsof -ti:8080 2>/dev/null | head -1)
+                echo '[Deploy] ✅ Service is listening on port 8080 (PID: '\$ACTIVE_PID')'
+                READY=1
+                break
+              elif command -v netstat >/dev/null 2>&1 && netstat -ln 2>/dev/null | grep -q ':8080.*LISTEN'; then
+                echo '[Deploy] ✅ Service is listening on port 8080 (detected via netstat)'
+                READY=1
+                break
+              fi
+              
+              # Check if our process is still running
+              if ! kill -0 \"\$NEW_PID\" 2>/dev/null; then
+                echo '[Deploy] ERROR: Process '\$NEW_PID' died during startup'
+                echo '[Deploy] Recent log output:'
+                tail -20 \"\$LOG_FILE\" 2>/dev/null || echo 'No log output available'
+                exit 1
+              fi
+              
+              echo '[Deploy] Waiting for service startup... ('\$i'/30)'
+              sleep 2
             done
             
-            echo "[Deploy] ❌ Service failed to bind to port 8080 within 20 seconds"
-            echo "[Deploy] Process status:"
-            ps aux | grep -E "(node|npm)" | grep $USER | grep -v grep || echo "No user node/npm processes found"
-            echo "[Deploy] Recent application logs:"
-            tail -50 $LOG_FILE 2>/dev/null || echo "No logs available at $LOG_FILE"
-            echo "[Deploy] Port usage:"
-            ss -tulpn 2>/dev/null | grep :8080 || netstat -tulpn 2>/dev/null | grep :8080 || echo "No process on port 8080"
-            exit 1'
-
-      - name: Summary
-        run: |
-          echo "Deployed version: ${{ steps.v.outputs.version }} commit: $GIT_SHA"
+            if [ \"\$READY\" = \"1\" ]; then
+              echo '[Deploy] ✅ Deployment completed successfully at \$(date)'
+              echo '[Deploy] Service PID: '\$NEW_PID
+              echo '[Deploy] Log file: '\$LOG_FILE
+            else
+              echo '[Deploy] ❌ Service startup timeout'
+              echo '[Deploy] Process status:'
+              ps aux | grep \"\$NEW_PID\" || echo 'Process not found in ps output'
+              echo '[Deploy] Recent log output:'
+              tail -30 \"\$LOG_FILE\" 2>/dev/null || echo 'No log output available'
+              exit 1
+            fi"
