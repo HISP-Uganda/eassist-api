@@ -109,24 +109,23 @@ jobs:
             
             # Create systemd service file
             echo '[Deploy] Creating systemd service file'
-            # Use a temporary file for the service definition. Note the unquoted EOF to allow variable expansion.
-            cat > /tmp/eassist-api.service << EOF
-[Unit]
-Description=eAssist API Service
-After=network.target
-
-[Service]
-Type=simple
-User=${{ secrets.DEPLOY_USER || 'gitdeploy' }}
-WorkingDirectory=${{ env.DEPLOY_PATH }}
-ExecStart=/usr/bin/npm start
-Restart=on-failure
-Environment=NODE_ENV=production
-Environment=PORT=8080
-
-[Install]
-WantedBy=multi-user.target
-EOF
+            # Use echo to create the service file line-by-line to avoid heredoc issues
+            echo "[Unit]" | sudo tee /tmp/eassist-api.service > /dev/null
+            echo "Description=eAssist API Service" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            echo "After=network.target" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            echo "" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            echo "[Service]" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            echo "Type=simple" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            echo "User=${{ secrets.DEPLOY_USER || 'gitdeploy' }}" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            echo "WorkingDirectory=${{ env.DEPLOY_PATH }}" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            NPM_PATH=\$(which npm)
+            echo "ExecStart=\$NPM_PATH start" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            echo "Restart=on-failure" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            echo "Environment=NODE_ENV=production" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            echo "Environment=PORT=8080" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            echo "" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            echo "[Install]" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            echo "WantedBy=multi-user.target" | sudo tee -a /tmp/eassist-api.service > /dev/null
 
             # Stop any old running services and free the port
             echo '[Deploy] Stopping any existing service with systemctl'
