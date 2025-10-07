@@ -162,24 +162,13 @@ jobs:
               
               sleep 2
               
-              if command -v python3 >/dev/null 2>&1; then
-                PORT_TEST=\$(python3 -c \"
-import socket
-try:
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(('', 8080))
-    s.close()
-    print('PORT_FREE')
-except:
-    print('PORT_BUSY')
-\" 2>/dev/null || echo 'PORT_BUSY')
-                
-                if [ \"\$PORT_TEST\" = \"PORT_FREE\" ]; then
-                  echo '[Deploy] Port 8080 is bindable - proceeding'
+              # Use a simpler port test method
+              if command -v nc >/dev/null 2>&1; then
+                if ! nc -z localhost 8080 2>/dev/null; then
+                  echo '[Deploy] Port 8080 appears free - proceeding'
                   break
                 else
-                  echo '[Deploy] Port 8080 still not bindable, attempt '\$cleanup_attempt'/5'
+                  echo '[Deploy] Port 8080 still responding, attempt '\$cleanup_attempt'/5'
                 fi
               else
                 if ! command -v lsof >/dev/null 2>&1 || ! lsof -ti:8080 >/dev/null 2>&1; then
