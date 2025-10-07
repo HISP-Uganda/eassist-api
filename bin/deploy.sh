@@ -76,11 +76,41 @@ else
   echo "[WARN] No migrate script found; skipping migrations"
 fi
 
+# Aggressively kill any process using port 8080 before restarting
+echo "[INFO] Forcefully stopping all processes on port 8080"
+# Try multiple methods to ensure port is free
+pkill -9 -f "node.*server.js" || true
+pkill -9 -f "npm.*start" || true
+sleep 1
+
+# Use fuser if available (more reliable for killing port processes)
+if command -v fuser >/dev/null 2>&1; then
+  fuser -k -9 8080/tcp || true
+  sleep 1
+fi
+
+# Use lsof as fallback
+PORT_PID=$(lsof -ti:8080 || true)
+if [ -n "$PORT_PID" ]; then
+  echo "[INFO] Killing processes on port 8080: $PORT_PID"
+  kill -9 $PORT_PID || true
+  sleep 2
+fi
+
+# Final verification that port is free
+if lsof -ti:8080 >/dev/null 2>&1; then
+  echo "[ERROR] Port 8080 is still in use after kill attempts"
+  lsof -i:8080 || true
+  exit 1
+fi
+
+echo "[INFO] Port 8080 is confirmed free"
+
 # Restart systemd service (allowed by provisioning sudoers)
 if command -v systemctl >/dev/null 2>&1; then
   echo "[INFO] Restarting eassist-api service"
   sudo systemctl restart eassist-api
-  sleep 1
+  sleep 2
   sudo systemctl status --no-pager eassist-api || true
 else
   echo "[WARN] systemctl not found; ensure the service is restarted manually"
