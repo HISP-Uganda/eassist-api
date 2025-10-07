@@ -95,76 +95,70 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=yes \
             ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} \
-            "echo '[Deploy] Starting deployment with systemd at \$(date)'
-            cd ${{ env.DEPLOY_PATH }} || { echo '[Deploy] Failed to change to deploy directory'; exit 1; }
+            "echo '[Deploy] Starting deployment with systemd at \$(date)'; \
+            set -e; \
+            cd ${{ env.DEPLOY_PATH }} || { echo '[Deploy] Failed to change to deploy directory'; exit 1; }; \
             
-            echo '[Deploy] Installing dependencies'
-            if ! npm ci --only=production --no-audit 2>/dev/null; then
-              echo '[Deploy] npm ci failed, trying npm install'
-              npm install --only=production --no-audit || { echo '[Deploy] Failed to install dependencies'; exit 1; }
-            fi
+            echo '[Deploy] Installing dependencies'; \
+            if ! npm ci --only=production --no-audit 2>/dev/null; then \
+              echo '[Deploy] npm ci failed, trying npm install'; \
+              npm install --only=production --no-audit || { echo '[Deploy] Failed to install dependencies'; exit 1; }; \
+            fi; \
             
-            echo '[Deploy] Running migrations'
-            npm run migrate:run 2>/dev/null || npm run migrate 2>/dev/null || echo '[Deploy] No migrations to run or migration failed (continuing)'
+            echo '[Deploy] Running migrations'; \
+            npm run migrate:run 2>/dev/null || npm run migrate 2>/dev/null || echo '[Deploy] No migrations to run or migration failed (continuing)'; \
             
-            # Create systemd service file
-            echo '[Deploy] Creating systemd service file'
-            # Use echo to create the service file line-by-line to avoid heredoc issues
-            echo "[Unit]" | sudo tee /tmp/eassist-api.service > /dev/null
-            echo "Description=eAssist API Service" | sudo tee -a /tmp/eassist-api.service > /dev/null
-            echo "After=network.target" | sudo tee -a /tmp/eassist-api.service > /dev/null
-            echo "" | sudo tee -a /tmp/eassist-api.service > /dev/null
-            echo "[Service]" | sudo tee -a /tmp/eassist-api.service > /dev/null
-            echo "Type=simple" | sudo tee -a /tmp/eassist-api.service > /dev/null
-            echo "User=${{ secrets.DEPLOY_USER || 'gitdeploy' }}" | sudo tee -a /tmp/eassist-api.service > /dev/null
-            echo "WorkingDirectory=${{ env.DEPLOY_PATH }}" | sudo tee -a /tmp/eassist-api.service > /dev/null
-            NPM_PATH=\$(which npm)
-            echo "ExecStart=\$NPM_PATH start" | sudo tee -a /tmp/eassist-api.service > /dev/null
-            echo "Restart=on-failure" | sudo tee -a /tmp/eassist-api.service > /dev/null
-            echo "Environment=NODE_ENV=production" | sudo tee -a /tmp/eassist-api.service > /dev/null
-            echo "Environment=PORT=8080" | sudo tee -a /tmp/eassist-api.service > /dev/null
-            echo "" | sudo tee -a /tmp/eassist-api.service > /dev/null
-            echo "[Install]" | sudo tee -a /tmp/eassist-api.service > /dev/null
-            echo "WantedBy=multi-user.target" | sudo tee -a /tmp/eassist-api.service > /dev/null
+            echo '[Deploy] Creating systemd service file'; \
+            echo '[Unit]' | sudo tee /tmp/eassist-api.service > /dev/null; \
+            echo 'Description=eAssist API Service' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
+            echo 'After=network.target' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
+            echo '' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
+            echo '[Service]' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
+            echo 'Type=simple' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
+            echo 'User=${{ secrets.DEPLOY_USER || 'gitdeploy' }}' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
+            echo 'WorkingDirectory=${{ env.DEPLOY_PATH }}' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
+            NPM_PATH=\$(which npm); \
+            echo \"ExecStart=\$NPM_PATH start\" | sudo tee -a /tmp/eassist-api.service > /dev/null; \
+            echo 'Restart=on-failure' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
+            echo 'Environment=NODE_ENV=production' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
+            echo 'Environment=PORT=8080' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
+            echo '' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
+            echo '[Install]' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
+            echo 'WantedBy=multi-user.target' | sudo tee -a /tmp/eassist-api.service > /dev/null; \
 
-            # Stop any old running services and free the port
-            echo '[Deploy] Stopping any existing service with systemctl'
-            if [ -f /etc/systemd/system/eassist-api.service ]; then
-              sudo systemctl stop eassist-api.service 2>/dev/null || echo '[Deploy] Service was not running'
-            fi
+            echo '[Deploy] Stopping any existing service with systemctl'; \
+            if [ -f /etc/systemd/system/eassist-api.service ]; then \
+              sudo systemctl stop eassist-api.service 2>/dev/null || echo '[Deploy] Service was not running'; \
+            fi; \
             
-            # Force kill anything still on port 8080 as a final measure
-            echo '[Deploy] Forcefully cleaning port 8080'
-            if command -v fuser >/dev/null 2>&1; then
-              sudo fuser -k -9 8080/tcp 2>/dev/null || true
-            fi
-            sleep 2 # Wait for OS to release port
+            echo '[Deploy] Forcefully cleaning port 8080'; \
+            if command -v fuser >/dev/null 2>&1; then \
+              sudo fuser -k -9 8080/tcp 2>/dev/null || true; \
+            fi; \
+            sleep 2; \
             
-            # Install and start the new service
-            echo '[Deploy] Installing and starting new systemd service'
-            sudo mv /tmp/eassist-api.service /etc/systemd/system/eassist-api.service
-            sudo systemctl daemon-reload
-            sudo systemctl enable eassist-api.service
-            sudo systemctl start eassist-api.service
+            echo '[Deploy] Installing and starting new systemd service'; \
+            sudo mv /tmp/eassist-api.service /etc/systemd/system/eassist-api.service; \
+            sudo systemctl daemon-reload; \
+            sudo systemctl enable eassist-api.service; \
+            sudo systemctl start eassist-api.service; \
             
-            # Verify service startup
-            echo '[Deploy] Verifying service startup'
-            sleep 5
+            echo '[Deploy] Verifying service startup'; \
+            sleep 5; \
             
-            if ! sudo systemctl is-active --quiet eassist-api.service; then
-              echo '[Deploy] ERROR: Service failed to start via systemd'
-              echo '[Deploy] Recent logs from journalctl:'
-              sudo journalctl -u eassist-api.service -n 20 --no-pager || echo 'No journalctl logs available'
-              exit 1
-            fi
+            if ! sudo systemctl is-active --quiet eassist-api.service; then \
+              echo '[Deploy] ERROR: Service failed to start via systemd'; \
+              echo '[Deploy] Recent logs from journalctl:'; \
+              sudo journalctl -u eassist-api.service -n 20 --no-pager || echo 'No journalctl logs available'; \
+              exit 1; \
+            fi; \
             
-            # Check if port 8080 is now in use by the new service
-            if ! lsof -i:8080 >/dev/null; then
-              echo '[Deploy] ERROR: Service is active but not listening on port 8080'
-              echo '[Deploy] Recent logs from journalctl:'
-              sudo journalctl -u eassist-api.service -n 20 --no-pager || echo 'No journalctl logs available'
-              exit 1
-            fi
+            if ! lsof -i:8080 >/dev/null; then \
+              echo '[Deploy] ERROR: Service is active but not listening on port 8080'; \
+              echo '[Deploy] Recent logs from journalctl:'; \
+              sudo journalctl -u eassist-api.service -n 20 --no-pager || echo 'No journalctl logs available'; \
+              exit 1; \
+            fi; \
             
-            echo '[Deploy] ✅ Deployment successful! Service is running via systemd.'
+            echo '[Deploy] ✅ Deployment successful! Service is running via systemd.'; \
             sudo systemctl status eassist-api.service --no-pager"
