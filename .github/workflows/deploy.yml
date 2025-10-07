@@ -109,6 +109,7 @@ jobs:
             
             # Create systemd service file
             echo '[Deploy] Creating systemd service file'
+            # Use a temporary file for the service definition. Note the unquoted EOF to allow variable expansion.
             cat > /tmp/eassist-api.service << EOF
 [Unit]
 Description=eAssist API Service
@@ -118,7 +119,7 @@ After=network.target
 Type=simple
 User=${{ secrets.DEPLOY_USER || 'gitdeploy' }}
 WorkingDirectory=${{ env.DEPLOY_PATH }}
-ExecStart=$(which npm) start
+ExecStart=/usr/bin/npm start
 Restart=on-failure
 Environment=NODE_ENV=production
 Environment=PORT=8080
