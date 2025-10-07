@@ -95,8 +95,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=yes \
             ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} \
-            "set -e
-            echo '[Deploy] Starting deployment at \$(date)'
+            "echo '[Deploy] Starting deployment at \$(date)'
             cd ${{ env.DEPLOY_PATH }} || { echo '[Deploy] Failed to change to deploy directory'; exit 1; }
             
             echo '[Deploy] Installing dependencies'
@@ -120,7 +119,7 @@ jobs:
                 fi
               done
               sleep 3
-              # Force kill if still running
+              # Force kill if still running - continue even if this fails
               REMAINING=\$(pgrep -f 'node.*server.js' 2>/dev/null || true)
               if [ -n \"\$REMAINING\" ]; then
                 echo '[Deploy] Force killing remaining node processes'
@@ -128,6 +127,9 @@ jobs:
                   kill -9 \"\$pid\" 2>/dev/null || true
                 done
               fi
+              echo '[Deploy] Node process cleanup completed'
+            else
+              echo '[Deploy] No existing node processes found'
             fi
             
             # Stop npm processes
@@ -141,13 +143,17 @@ jobs:
                 fi
               done
               sleep 2
-              # Force kill remaining npm processes
+              # Force kill remaining npm processes - continue even if this fails
               REMAINING_NPM=\$(pgrep -f 'npm.*start' 2>/dev/null || true)
               if [ -n \"\$REMAINING_NPM\" ]; then
+                echo '[Deploy] Force killing remaining npm processes'
                 for pid in \$REMAINING_NPM; do
                   kill -9 \"\$pid\" 2>/dev/null || true
                 done
               fi
+              echo '[Deploy] NPM process cleanup completed'
+            else
+              echo '[Deploy] No existing npm processes found'
             fi
             
             # Free port 8080 if occupied
@@ -162,6 +168,9 @@ jobs:
                     kill -9 \"\$pid\" 2>/dev/null || true
                   fi
                 done
+                echo '[Deploy] Port cleanup completed'
+              else
+                echo '[Deploy] Port 8080 not in use'
               fi
             fi
             
