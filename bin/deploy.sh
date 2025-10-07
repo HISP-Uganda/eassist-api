@@ -123,62 +123,100 @@ fi
 # Wait for processes to fully terminate
 sleep 5
 
-# --- begin hardened 8080 cleanup ---
-echo "[INFO] Systemd check for lingering service on 8080"
-if command -v systemctl >/dev/null 2>&1; then
-  # Stop common unit names quietly if they exist
-  for svc in eassist-api eassist eassist_api; do
-    if systemctl list-units --type=service --all | grep -q "^${svc}.service"; then
-      echo "[INFO] Stopping systemd service: ${svc}.service"
-      sudo systemctl stop "${svc}.service" || true
-      sudo systemctl disable "${svc}.service" || true
+# --- begin sudo-free 8080 cleanup ---
+echo "[INFO] Sudo-free port 8080 cleanup (no elevated privileges)"
+
+# First check what we can see without sudo
+if command -v ss >/dev/null 2>&1; then
+  echo "[INFO] Checking port 8080 with user permissions:"
+  ss -tlnp 2>/dev/null | grep :8080 || echo "[INFO] No visible processes using port 8080"
+elif command -v lsof >/dev/null 2>&1; then
+  echo "[INFO] Checking port 8080 with lsof:"
+  lsof -i:8080 2>/dev/null || echo "[INFO] No visible processes using port 8080"
+fi
+
+# Kill any processes we can see and control
+if command -v lsof >/dev/null 2>&1; then
+  USER_PIDS=$(lsof -ti:8080 2>/dev/null | while read pid; do
+    if [ -n "$pid" ] && ps -p "$pid" -o user= 2>/dev/null | grep -q "^$(whoami)$"; then
+      echo "$pid"
     fi
-  done
+  done)
+
+  if [ -n "$USER_PIDS" ]; then
+    echo "[INFO] Killing user-owned processes on port 8080: $USER_PIDS"
+    for pid in $USER_PIDS; do
+      if [ -n "$pid" ]; then
+        echo "[INFO] Killing PID: $pid"
+        kill -9 "$pid" 2>/dev/null || echo "[INFO] Could not kill $pid"
+      fi
+    done
+    sleep 2
+  fi
 fi
 
-echo "[INFO] Enumerating listeners on 8080 with sudo (cross-user)"
-# Try ss first (fast), fall back to lsof
-PIDS_SUDO="$(sudo ss -ltnp 2>/dev/null | awk '/:8080 /{print}' | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' | tr '\n' ' ')"
-if [ -z "$PIDS_SUDO" ] && command -v lsof >/dev/null 2>&1; then
-  PIDS_SUDO="$(sudo lsof -nP -iTCP:8080 -sTCP:LISTEN -t 2>/dev/null | tr '\n' ' ')"
-fi
-
-if [ -n "$PIDS_SUDO" ]; then
-  echo "[INFO] Killing PIDs listening on 8080: $PIDS_SUDO"
-  for pid in $PIDS_SUDO; do
-    sudo kill -TERM "$pid" 2>/dev/null || true
-  done
-  sleep 2
-  # Force-kill if still alive
-  for pid in $PIDS_SUDO; do
-    if sudo kill -0 "$pid" 2>/dev/null; then
-      echo "[INFO] Force killing PID: $pid"
-      sudo kill -9 "$pid" 2>/dev/null || true
-    fi
-  done
-fi
-
-echo "[INFO] Using fuser as last resort"
-sudo fuser -k 8080/tcp 2>/dev/null || echo "[INFO] fuser found no processes"
+# Alternative strategy: Use a different port temporarily and proxy
+# Check if port 8080 is still busy after cleanup
 sleep 2
+ALTERNATIVE_PORT=8081
 
-# Wait loop until 8080 is free
-echo "[INFO] Verifying port 8080 is free"
-for i in $(seq 1 20); do
-  if sudo ss -ltn 2>/dev/null | grep -q ':8080 '; then
-    echo "[INFO] Port still busy, retry $i/20..."
-    sleep 1
+if command -v nc >/dev/null 2>&1; then
+  if nc -z localhost 8080 2>/dev/null; then
+    echo "[WARNING] Port 8080 still appears busy, trying alternative approach"
+    echo "[INFO] Checking if we can use alternative port $ALTERNATIVE_PORT"
+
+    if ! nc -z localhost $ALTERNATIVE_PORT 2>/dev/null; then
+      echo "[INFO] Port $ALTERNATIVE_PORT is free, will use as alternative"
+      # Update PORT in .env temporarily
+      if [ -f .env ]; then
+        sed -i.bak "s/^PORT=.*/PORT=$ALTERNATIVE_PORT/" .env 2>/dev/null || {
+          echo "PORT=$ALTERNATIVE_PORT" >> .env
+        }
+      else
+        echo "PORT=$ALTERNATIVE_PORT" > .env
+      fi
+      echo "[INFO] Temporarily using port $ALTERNATIVE_PORT instead of 8080"
+    else
+      echo "[ERROR] Both ports 8080 and $ALTERNATIVE_PORT appear to be in use"
+      # Last resort: try to find any available port
+      for try_port in 8082 8083 8084 8085 3000 3001 9000 9001; do
+        if ! nc -z localhost $try_port 2>/dev/null; then
+          echo "[INFO] Found available port $try_port, using as emergency fallback"
+          if [ -f .env ]; then
+            sed -i.bak "s/^PORT=.*/PORT=$try_port/" .env 2>/dev/null || {
+              echo "PORT=$try_port" >> .env
+            }
+          else
+            echo "PORT=$try_port" > .env
+          fi
+          ALTERNATIVE_PORT=$try_port
+          break
+        fi
+      done
+    fi
   else
-    echo "[INFO] Port 8080 is now free"
-    break
+    echo "[INFO] Port 8080 appears to be free after cleanup"
+    # Ensure .env has PORT=8080
+    if [ -f .env ]; then
+      if grep -q "^PORT=" .env; then
+        sed -i.bak "s/^PORT=.*/PORT=8080/" .env 2>/dev/null
+      else
+        echo "PORT=8080" >> .env
+      fi
+    else
+      echo "PORT=8080" > .env
+    fi
   fi
-  if [ "$i" -eq 20 ]; then
-    echo "[ERROR] Port 8080 did not free up"
-    sudo ss -ltnp | grep ':8080' || true
-    exit 1
-  fi
-done
-# --- end hardened 8080 cleanup ---
+fi
+
+# Final verification
+echo "[INFO] Final port verification before starting service"
+FINAL_PORT=$(grep "^PORT=" .env 2>/dev/null | cut -d= -f2 || echo "8080")
+echo "[INFO] Will start service on port: $FINAL_PORT"
+
+# Wait a bit more to ensure port is released
+sleep 3
+# --- end sudo-free 8080 cleanup ---
 
 # Start service using simple process management
 echo "[INFO] Starting eassist-api service"
@@ -188,14 +226,18 @@ LOG_DIR="$HOME/logs"
 mkdir -p "$LOG_DIR" 2>/dev/null || LOG_DIR="/tmp"
 LOG_FILE="$LOG_DIR/eassist-api.log"
 
-# Start the service in background
+# Get the port from .env (it might have been changed to an alternative port)
+FINAL_PORT=$(grep "^PORT=" .env 2>/dev/null | cut -d= -f2 || echo "8080")
+echo "[INFO] Starting service on port: $FINAL_PORT"
+
+# Start the service in background with the correct port
 cd /opt/eassist-api
-NODE_ENV=production PORT=8080 nohup npm start >"$LOG_FILE" 2>&1 &
+NODE_ENV=production PORT="$FINAL_PORT" nohup npm start >"$LOG_FILE" 2>&1 &
 NEW_PID=$!
 
 # Save PID for future deployments
 echo $NEW_PID > "$PID_FILE"
-echo "[INFO] Started service with PID: $NEW_PID"
+echo "[INFO] Started service with PID: $NEW_PID on port $FINAL_PORT"
 echo "[INFO] Log file: $LOG_FILE"
 
 # Wait and verify service started
@@ -207,16 +249,16 @@ if ! kill -0 "$NEW_PID" 2>/dev/null; then
   exit 1
 fi
 
-# Verify service is listening on port 8080
-echo "[INFO] Waiting for service to start..."
+# Verify service is listening on the correct port
+echo "[INFO] Waiting for service to start on port $FINAL_PORT..."
 READY=0
 for i in {1..30}; do
-  if command -v nc >/dev/null 2>&1 && nc -z localhost 8080 2>/dev/null; then
-    echo "[INFO] ✅ Service is responding on port 8080"
+  if command -v nc >/dev/null 2>&1 && nc -z localhost "$FINAL_PORT" 2>/dev/null; then
+    echo "[INFO] ✅ Service is responding on port $FINAL_PORT"
     READY=1
     break
-  elif command -v lsof >/dev/null 2>&1 && lsof -ti:8080 >/dev/null 2>&1; then
-    echo "[INFO] ✅ Service is listening on port 8080"
+  elif command -v lsof >/dev/null 2>&1 && lsof -ti:"$FINAL_PORT" >/dev/null 2>&1; then
+    echo "[INFO] ✅ Service is listening on port $FINAL_PORT"
     READY=1
     break
   fi
@@ -235,8 +277,13 @@ done
 if [ $READY -eq 1 ]; then
   echo "[OK] ✅ Deployment successful"
   echo "[INFO] Service PID: $NEW_PID"
+  echo "[INFO] Service Port: $FINAL_PORT"
   echo "[INFO] PID file: $PID_FILE"
   echo "[INFO] Log file: $LOG_FILE"
+  if [ "$FINAL_PORT" != "8080" ]; then
+    echo "[WARNING] Service is running on port $FINAL_PORT instead of 8080 due to port conflict"
+    echo "[INFO] You may need to update your reverse proxy/load balancer configuration"
+  fi
 else
   echo "[ERROR] ❌ Service startup timeout"
   echo "[ERROR] Process info:"
