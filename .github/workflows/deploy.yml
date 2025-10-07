@@ -105,26 +105,26 @@ jobs:
             echo "[Deploy] Running migrations"
             npm run migrate:run 2>/dev/null || npm run migrate 2>/dev/null || echo "No migrations to run"
             
-            echo "[Deploy] Aggressively stopping all Node.js and npm processes"
-            # Kill ALL node processes that might be running the API
-            sudo pkill -9 -f "node.*server.js" 2>/dev/null || true
-            sudo pkill -9 -f "npm.*start" 2>/dev/null || true
-            sudo pkill -9 -f "node.*src/server.js" 2>/dev/null || true
+            echo "[Deploy] Stopping all Node.js and npm processes (user-owned)"
+            # Kill user-owned node processes without sudo
+            pkill -9 -f "node.*server.js" 2>/dev/null || true
+            pkill -9 -f "npm.*start" 2>/dev/null || true
+            pkill -9 -f "node.*src/server.js" 2>/dev/null || true
             
-            echo "[Deploy] Killing any process using port 8080"
-            # Multiple methods to ensure port is completely free
-            sudo fuser -k -9 8080/tcp 2>/dev/null || true
-            sudo lsof -ti:8080 | xargs -r sudo kill -9 2>/dev/null || true
+            echo "[Deploy] Killing any process using port 8080 (user-owned)"
+            # Use fuser and lsof without sudo for user processes
+            fuser -k 8080/tcp 2>/dev/null || true
+            lsof -ti:8080 2>/dev/null | xargs -r kill -9 2>/dev/null || true
             
             echo "[Deploy] Waiting for processes to fully terminate"
             sleep 3
             
             # Final verification that port is free
             for attempt in 1 2 3; do
-              if sudo lsof -ti:8080 >/dev/null 2>&1; then
+              if lsof -ti:8080 >/dev/null 2>&1; then
                 echo "[Deploy] Attempt $attempt: Port 8080 still busy, killing remaining processes"
-                sudo lsof -ti:8080 | xargs -r sudo kill -9 2>/dev/null || true
-                sudo fuser -k -9 8080/tcp 2>/dev/null || true
+                lsof -ti:8080 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+                fuser -k 8080/tcp 2>/dev/null || true
                 sleep 2
               else
                 echo "[Deploy] Port 8080 confirmed free"
@@ -132,32 +132,36 @@ jobs:
               fi
               if [ $attempt -eq 3 ]; then
                 echo "[Deploy] ERROR: Cannot free port 8080 after 3 attempts"
-                sudo lsof -i:8080 || true
+                lsof -i:8080 2>/dev/null || echo "No processes found on port 8080"
                 exit 1
               fi
             done
             
             echo "[Deploy] Starting service with nohup"
-            # Ensure log directory and file permissions
-            sudo mkdir -p /var/log
-            sudo touch /var/log/eassist-api.out
-            sudo chown $USER /var/log/eassist-api.out 2>/dev/null || true
+            # Ensure log directory exists (user writable)
+            mkdir -p ~/logs 2>/dev/null || mkdir -p /tmp/eassist-logs
+            LOG_FILE="~/logs/eassist-api.out"
+            if [ ! -w ~/logs 2>/dev/null ]; then
+              LOG_FILE="/tmp/eassist-logs/eassist-api.out"
+              mkdir -p /tmp/eassist-logs
+            fi
             
             # Start with explicit environment and immediate background
             cd ${{ env.DEPLOY_PATH }}
-            NODE_ENV=production PORT=8080 nohup npm start >/var/log/eassist-api.out 2>&1 &
+            NODE_ENV=production PORT=8080 nohup npm start >$LOG_FILE 2>&1 &
             START_PID=$!
             echo "[Deploy] Started process with PID: $START_PID"
+            echo "[Deploy] Logs will be written to: $LOG_FILE"
             
             # Wait for successful startup with timeout
             echo "[Deploy] Waiting for service to bind to port 8080..."
             for i in {1..20}; do
-              if sudo lsof -ti:8080 >/dev/null 2>&1; then
-                LISTENING_PID=$(sudo lsof -ti:8080 | head -n1)
+              if lsof -ti:8080 >/dev/null 2>&1; then
+                LISTENING_PID=$(lsof -ti:8080 2>/dev/null | head -n1)
                 echo "[Deploy] ✅ Service successfully listening on port 8080 (PID: $LISTENING_PID)"
                 echo "[Deploy] Deployment completed successfully at $(date)"
                 # Show final status
-                sudo lsof -i:8080 | head -5
+                lsof -i:8080 2>/dev/null | head -5 || echo "Port 8080 is active"
                 exit 0
               fi
               echo "[Deploy] Waiting for startup ($i/20)..."
@@ -166,11 +170,11 @@ jobs:
             
             echo "[Deploy] ❌ Service failed to bind to port 8080 within 20 seconds"
             echo "[Deploy] Process status:"
-            ps aux | grep -E "(node|npm)" | grep -v grep || echo "No node/npm processes found"
+            ps aux | grep -E "(node|npm)" | grep $USER | grep -v grep || echo "No user node/npm processes found"
             echo "[Deploy] Recent application logs:"
-            tail -50 /var/log/eassist-api.out 2>/dev/null || echo "No logs available"
+            tail -50 $LOG_FILE 2>/dev/null || echo "No logs available at $LOG_FILE"
             echo "[Deploy] Port usage:"
-            sudo ss -tulpn | grep :8080 || echo "No process on port 8080"
+            ss -tulpn 2>/dev/null | grep :8080 || netstat -tulpn 2>/dev/null | grep :8080 || echo "No process on port 8080"
             exit 1'
 
       - name: Summary
