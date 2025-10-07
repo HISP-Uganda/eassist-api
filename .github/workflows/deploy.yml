@@ -140,13 +140,18 @@ jobs:
             for cleanup_attempt in \$(seq 1 5); do
               echo '[Deploy] Port cleanup attempt '\$cleanup_attempt'/5'
               
-              # Method 1: Use lsof to find and kill processes
+              # Method 1: Use lsof to find and kill processes (safer approach)
               if command -v lsof >/dev/null 2>&1; then
                 PORT_PIDS=\$(lsof -ti:8080 2>/dev/null || true)
                 if [ -n \"\$PORT_PIDS\" ]; then
                   echo '[Deploy] Found processes on port 8080 via lsof: '\$PORT_PIDS
-                  echo \"\$PORT_PIDS\" | xargs -r kill -9 2>/dev/null || true
-                  sleep 1
+                  for pid in \$PORT_PIDS; do
+                    if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
+                      echo '[Deploy] Killing PID '\$pid' (lsof)'
+                      kill -9 \"\$pid\" 2>/dev/null || true
+                    fi
+                  done
+                  sleep 2
                 fi
               fi
               
@@ -154,10 +159,10 @@ jobs:
               if command -v fuser >/dev/null 2>&1; then
                 echo '[Deploy] Using fuser to kill processes on port 8080'
                 fuser -k -9 8080/tcp 2>/dev/null || true
-                sleep 1
+                sleep 2
               fi
               
-              # Method 3: Use ss and parse PIDs properly
+              # Method 3: Use ss and parse PIDs properly (safer)
               if command -v ss >/dev/null 2>&1; then
                 SS_OUTPUT=\$(ss -tulpn 2>/dev/null | grep ':8080 ' || true)
                 if [ -n \"\$SS_OUTPUT\" ]; then
@@ -166,40 +171,60 @@ jobs:
                   SS_PIDS=\$(echo \"\$SS_OUTPUT\" | awk '{print \$NF}' | grep -o 'pid=[0-9]*' | cut -d'=' -f2 2>/dev/null || true)
                   if [ -n \"\$SS_PIDS\" ]; then
                     echo '[Deploy] SS found PIDs: '\$SS_PIDS
-                    echo \"\$SS_PIDS\" | xargs -r kill -9 2>/dev/null || true
-                    sleep 1
+                    for pid in \$SS_PIDS; do
+                      if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
+                        echo '[Deploy] Killing PID '\$pid' (ss)'
+                        kill -9 \"\$pid\" 2>/dev/null || true
+                      fi
+                    done
+                    sleep 2
                   fi
                 fi
               fi
               
-              # Method 4: Use netstat as fallback
+              # Method 4: Use netstat as fallback (safer)
               if command -v netstat >/dev/null 2>&1; then
                 NETSTAT_PIDS=\$(netstat -tulpn 2>/dev/null | grep ':8080 ' | awk '{print \$NF}' | cut -d'/' -f1 | grep '^[0-9]*\$' 2>/dev/null || true)
                 if [ -n \"\$NETSTAT_PIDS\" ]; then
                   echo '[Deploy] Netstat found PIDs: '\$NETSTAT_PIDS
-                  echo \"\$NETSTAT_PIDS\" | xargs -r kill -9 2>/dev/null || true
-                  sleep 1
+                  for pid in \$NETSTAT_PIDS; do
+                    if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
+                      echo '[Deploy] Killing PID '\$pid' (netstat)'
+                      kill -9 \"\$pid\" 2>/dev/null || true
+                    fi
+                  done
+                  sleep 2
                 fi
               fi
               
-              # Method 5: Kill any node processes that might be using port 8080
+              # Method 5: Kill node processes more safely (avoid pgrep/xargs combo)
               if command -v pgrep >/dev/null 2>&1; then
                 NODE_PIDS=\$(pgrep -f 'node.*server.js' 2>/dev/null || true)
                 if [ -n \"\$NODE_PIDS\" ]; then
                   echo '[Deploy] Found node server processes: '\$NODE_PIDS
-                  echo \"\$NODE_PIDS\" | xargs -r kill -9 2>/dev/null || true
-                  sleep 1
+                  for pid in \$NODE_PIDS; do
+                    if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
+                      echo '[Deploy] Killing node PID '\$pid
+                      kill -9 \"\$pid\" 2>/dev/null || true
+                    fi
+                  done
+                  sleep 2
                 fi
                 
                 NPM_PIDS=\$(pgrep -f 'npm.*start' 2>/dev/null || true)
                 if [ -n \"\$NPM_PIDS\" ]; then
                   echo '[Deploy] Found npm start processes: '\$NPM_PIDS
-                  echo \"\$NPM_PIDS\" | xargs -r kill -9 2>/dev/null || true
-                  sleep 1
+                  for pid in \$NPM_PIDS; do
+                    if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
+                      echo '[Deploy] Killing npm PID '\$pid
+                      kill -9 \"\$pid\" 2>/dev/null || true
+                    fi
+                  done
+                  sleep 2
                 fi
               fi
               
-              # Wait a bit for processes to die
+              # Wait for processes to fully terminate
               sleep 3
               
               # Test if port is now free using multiple methods
