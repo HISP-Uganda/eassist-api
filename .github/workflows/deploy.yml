@@ -95,7 +95,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=yes \
             ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} \
-            "echo '[Deploy] Starting deployment at \$(date)'
+            "echo '[Deploy] Starting deployment with systemd at \$(date)'
             cd ${{ env.DEPLOY_PATH }} || { echo '[Deploy] Failed to change to deploy directory'; exit 1; }
             
             echo '[Deploy] Installing dependencies'
@@ -107,265 +107,64 @@ jobs:
             echo '[Deploy] Running migrations'
             npm run migrate:run 2>/dev/null || npm run migrate 2>/dev/null || echo '[Deploy] No migrations to run or migration failed (continuing)'
             
-            echo '[Deploy] Stopping existing service safely'
-            PID_FILE=\"/tmp/eassist-api.pid\"
-            
-            if [ -f \"\$PID_FILE\" ]; then
-              OLD_PID=\$(cat \"\$PID_FILE\" 2>/dev/null || echo '')
-              if [ -n \"\$OLD_PID\" ] && kill -0 \"\$OLD_PID\" 2>/dev/null; then
-                echo '[Deploy] Found running service with PID: '\$OLD_PID
-                echo '[Deploy] Stopping gracefully...'
-                kill -TERM \"\$OLD_PID\" 2>/dev/null || true
-                for i in \$(seq 1 10); do
-                  if ! kill -0 \"\$OLD_PID\" 2>/dev/null; then
-                    echo '[Deploy] Service stopped gracefully'
-                    break
-                  fi
-                  echo '[Deploy] Waiting for graceful shutdown... ('\$i'/10)'
-                  sleep 1
-                done
-                if kill -0 \"\$OLD_PID\" 2>/dev/null; then
-                  echo '[Deploy] Force killing stubborn process'
-                  kill -9 \"\$OLD_PID\" 2>/dev/null || true
-                fi
-              else
-                echo '[Deploy] PID file exists but process not running'
-              fi
-              rm -f \"\$PID_FILE\"
-            else
-              echo '[Deploy] No PID file found'
+            # Create systemd service file
+            echo '[Deploy] Creating systemd service file'
+            cat > /tmp/eassist-api.service << EOF
+[Unit]
+Description=eAssist API Service
+After=network.target
+
+[Service]
+Type=simple
+User=${{ secrets.DEPLOY_USER || 'gitdeploy' }}
+WorkingDirectory=${{ env.DEPLOY_PATH }}
+ExecStart=$(which npm) start
+Restart=on-failure
+Environment=NODE_ENV=production
+Environment=PORT=8080
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+            # Stop any old running services and free the port
+            echo '[Deploy] Stopping any existing service with systemctl'
+            if [ -f /etc/systemd/system/eassist-api.service ]; then
+              sudo systemctl stop eassist-api.service 2>/dev/null || echo '[Deploy] Service was not running'
             fi
             
-            echo '[Deploy] Comprehensive port cleanup'
-            for cleanup_attempt in \$(seq 1 5); do
-              echo '[Deploy] Port cleanup attempt '\$cleanup_attempt'/5'
-              
-              # Method 1: Use lsof to find and kill processes (safer approach)
-              if command -v lsof >/dev/null 2>&1; then
-                PORT_PIDS=\$(lsof -ti:8080 2>/dev/null || true)
-                if [ -n \"\$PORT_PIDS\" ]; then
-                  echo '[Deploy] Found processes on port 8080 via lsof: '\$PORT_PIDS
-                  for pid in \$PORT_PIDS; do
-                    if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
-                      echo '[Deploy] Killing PID '\$pid' (lsof)'
-                      kill -9 \"\$pid\" 2>/dev/null || true
-                    fi
-                  done
-                  sleep 2
-                fi
-              fi
-              
-              # Method 2: Use fuser to kill processes on port
-              if command -v fuser >/dev/null 2>&1; then
-                echo '[Deploy] Using fuser to kill processes on port 8080'
-                fuser -k -9 8080/tcp 2>/dev/null || true
-                sleep 2
-              fi
-              
-              # Method 3: Use ss and parse PIDs properly (safer)
-              if command -v ss >/dev/null 2>&1; then
-                SS_OUTPUT=\$(ss -tulpn 2>/dev/null | grep ':8080 ' || true)
-                if [ -n \"\$SS_OUTPUT\" ]; then
-                  echo '[Deploy] SS output for port 8080: '\$SS_OUTPUT
-                  # Extract PIDs from ss output more carefully
-                  SS_PIDS=\$(echo \"\$SS_OUTPUT\" | awk '{print \$NF}' | grep -o 'pid=[0-9]*' | cut -d'=' -f2 2>/dev/null || true)
-                  if [ -n \"\$SS_PIDS\" ]; then
-                    echo '[Deploy] SS found PIDs: '\$SS_PIDS
-                    for pid in \$SS_PIDS; do
-                      if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
-                        echo '[Deploy] Killing PID '\$pid' (ss)'
-                        kill -9 \"\$pid\" 2>/dev/null || true
-                      fi
-                    done
-                    sleep 2
-                  fi
-                fi
-              fi
-              
-              # Method 4: Use netstat as fallback (safer)
-              if command -v netstat >/dev/null 2>&1; then
-                NETSTAT_PIDS=\$(netstat -tulpn 2>/dev/null | grep ':8080 ' | awk '{print \$NF}' | cut -d'/' -f1 | grep '^[0-9]*\$' 2>/dev/null || true)
-                if [ -n \"\$NETSTAT_PIDS\" ]; then
-                  echo '[Deploy] Netstat found PIDs: '\$NETSTAT_PIDS
-                  for pid in \$NETSTAT_PIDS; do
-                    if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
-                      echo '[Deploy] Killing PID '\$pid' (netstat)'
-                      kill -9 \"\$pid\" 2>/dev/null || true
-                    fi
-                  done
-                  sleep 2
-                fi
-              fi
-              
-              # Method 5: Kill node processes more safely (avoid pgrep/xargs combo)
-              if command -v pgrep >/dev/null 2>&1; then
-                NODE_PIDS=\$(pgrep -f 'node.*server.js' 2>/dev/null || true)
-                if [ -n \"\$NODE_PIDS\" ]; then
-                  echo '[Deploy] Found node server processes: '\$NODE_PIDS
-                  for pid in \$NODE_PIDS; do
-                    if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
-                      echo '[Deploy] Killing node PID '\$pid
-                      kill -9 \"\$pid\" 2>/dev/null || true
-                    fi
-                  done
-                  sleep 2
-                fi
-                
-                NPM_PIDS=\$(pgrep -f 'npm.*start' 2>/dev/null || true)
-                if [ -n \"\$NPM_PIDS\" ]; then
-                  echo '[Deploy] Found npm start processes: '\$NPM_PIDS
-                  for pid in \$NPM_PIDS; do
-                    if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
-                      echo '[Deploy] Killing npm PID '\$pid
-                      kill -9 \"\$pid\" 2>/dev/null || true
-                    fi
-                  done
-                  sleep 2
-                fi
-              fi
-              
-              # Wait for processes to fully terminate
-              sleep 3
-              
-              # Test if port is now free using multiple methods
-              PORT_FREE=0
-              
-              # Test with nc
-              if command -v nc >/dev/null 2>&1; then
-                if ! nc -z localhost 8080 2>/dev/null; then
-                  echo '[Deploy] Port 8080 appears free (nc test)'
-                  PORT_FREE=1
-                fi
-              fi
-              
-              # Test with lsof
-              if [ \$PORT_FREE -eq 0 ] && command -v lsof >/dev/null 2>&1; then
-                if ! lsof -ti:8080 >/dev/null 2>&1; then
-                  echo '[Deploy] Port 8080 appears free (lsof test)'
-                  PORT_FREE=1
-                fi
-              fi
-              
-              # Test with netstat
-              if [ \$PORT_FREE -eq 0 ] && command -v netstat >/dev/null 2>&1; then
-                if ! netstat -ln 2>/dev/null | grep -q ':8080.*LISTEN'; then
-                  echo '[Deploy] Port 8080 appears free (netstat test)'
-                  PORT_FREE=1
-                fi
-              fi
-              
-              if [ \$PORT_FREE -eq 1 ]; then
-                echo '[Deploy] Port 8080 successfully freed after attempt '\$cleanup_attempt
-                break
-              else
-                echo '[Deploy] Port 8080 still in use after attempt '\$cleanup_attempt
-                if [ \$cleanup_attempt -eq 5 ]; then
-                  echo '[Deploy] ⚠️  Final attempt - detailed diagnostics:'
-                  echo '[Deploy] lsof output:'
-                  lsof -i:8080 2>/dev/null || echo 'No lsof results'
-                  echo '[Deploy] netstat output:'
-                  netstat -tulpn 2>/dev/null | grep 8080 || echo 'No netstat results'
-                  echo '[Deploy] ss output:'
-                  ss -tulpn 2>/dev/null | grep 8080 || echo 'No ss results'
-                  echo '[Deploy] Proceeding anyway...'
-                fi
-              fi
-            done
+            # Force kill anything still on port 8080 as a final measure
+            echo '[Deploy] Forcefully cleaning port 8080'
+            if command -v fuser >/dev/null 2>&1; then
+              sudo fuser -k -9 8080/tcp 2>/dev/null || true
+            fi
+            sleep 2 # Wait for OS to release port
             
-            echo '[Deploy] Starting new service'
-            LOG_DIR=\"\$HOME/logs\"
-            mkdir -p \"\$LOG_DIR\" 2>/dev/null || {
-              LOG_DIR=\"/tmp/eassist-logs\"
-              mkdir -p \"\$LOG_DIR\" 2>/dev/null || LOG_DIR=\"/tmp\"
-            }
-            LOG_FILE=\"\$LOG_DIR/eassist-api.out\"
+            # Install and start the new service
+            echo '[Deploy] Installing and starting new systemd service'
+            sudo mv /tmp/eassist-api.service /etc/systemd/system/eassist-api.service
+            sudo systemctl daemon-reload
+            sudo systemctl enable eassist-api.service
+            sudo systemctl start eassist-api.service
             
-            cd ${{ env.DEPLOY_PATH }}
+            # Verify service startup
+            echo '[Deploy] Verifying service startup'
+            sleep 5
             
-            SERVICE_STARTED=0
-            for start_attempt in \$(seq 1 3); do
-              echo '[Deploy] Service start attempt '\$start_attempt'/3'
-              
-              NODE_ENV=production PORT=8080 nohup npm start >\"\$LOG_FILE\" 2>&1 &
-              NEW_PID=\$!
-              
-              sleep 5
-              
-              if kill -0 \"\$NEW_PID\" 2>/dev/null; then
-                echo '[Deploy] Service process is running with PID: '\$NEW_PID
-                echo \$NEW_PID > \"\$PID_FILE\"
-                echo '[Deploy] PID saved to '\$PID_FILE
-                SERVICE_STARTED=1
-                break
-              else
-                echo '[Deploy] Service start attempt '\$start_attempt' failed'
-                echo '[Deploy] Log from failed attempt:'
-                tail -20 \"\$LOG_FILE\" 2>/dev/null || echo 'No logs available'
-                
-                if [ \$start_attempt -lt 3 ]; then
-                  echo '[Deploy] Waiting 5 seconds before retry'
-                  sleep 5
-                  if command -v fuser >/dev/null 2>&1; then
-                    fuser -k -9 8080/tcp 2>/dev/null || true
-                  fi
-                fi
-              fi
-            done
-            
-            if [ \$SERVICE_STARTED -eq 0 ]; then
-              echo '[Deploy] ERROR: Service failed to start after 3 attempts'
-              echo '[Deploy] Final log output:'
-              tail -50 \"\$LOG_FILE\" 2>/dev/null || echo 'No logs available'
-              echo '[Deploy] Final port diagnostics:'
-              lsof -i:8080 2>/dev/null || echo 'No processes on port 8080'
-              netstat -tulpn 2>/dev/null | grep 8080 || echo 'No netstat results for 8080'
-              rm -f \"\$PID_FILE\"
+            if ! sudo systemctl is-active --quiet eassist-api.service; then
+              echo '[Deploy] ERROR: Service failed to start via systemd'
+              echo '[Deploy] Recent logs from journalctl:'
+              sudo journalctl -u eassist-api.service -n 20 --no-pager || echo 'No journalctl logs available'
               exit 1
             fi
             
-            echo '[Deploy] Verifying service is ready'
-            READY=0
-            for attempt in \$(seq 1 30); do
-              if command -v nc >/dev/null 2>&1 && nc -z localhost 8080 2>/dev/null; then
-                echo '[Deploy] Service is responding on port 8080'
-                READY=1
-                break
-              elif command -v lsof >/dev/null 2>&1 && lsof -ti:8080 >/dev/null 2>&1; then
-                echo '[Deploy] Service is listening on port 8080'
-                READY=1
-                break
-              elif command -v netstat >/dev/null 2>&1 && netstat -ln 2>/dev/null | grep -q ':8080.*LISTEN'; then
-                echo '[Deploy] Service detected via netstat'
-                READY=1
-                break
-              fi
-              
-              if ! kill -0 \"\$NEW_PID\" 2>/dev/null; then
-                echo '[Deploy] ERROR: Service process died during startup'
-                echo '[Deploy] Recent logs:'
-                tail -30 \"\$LOG_FILE\" 2>/dev/null || echo 'No logs available'
-                rm -f \"\$PID_FILE\"
-                exit 1
-              fi
-              
-              echo '[Deploy] Waiting for service... ('\$attempt'/30)'
-              sleep 2
-            done
-            
-            if [ \"\$READY\" = \"1\" ]; then
-              echo '[Deploy] Deployment successful at \$(date)'
-              echo '[Deploy] Service PID: '\$NEW_PID
-              echo '[Deploy] PID file: '\$PID_FILE
-              echo '[Deploy] Log file: '\$LOG_FILE
-              echo '[Deploy] Service should be available shortly'
-            else
-              echo '[Deploy] Service startup timeout after 60 seconds'
-              echo '[Deploy] Process info:'
-              ps aux | grep \"\$NEW_PID\" 2>/dev/null || echo 'Process not found'
-              echo '[Deploy] Port check:'
-              netstat -ln 2>/dev/null | grep 8080 || echo 'Port 8080 not found in netstat'
-              echo '[Deploy] Recent logs:'
-              tail -50 \"\$LOG_FILE\" 2>/dev/null || echo 'No logs available'
-              rm -f \"\$PID_FILE\"
+            # Check if port 8080 is now in use by the new service
+            if ! lsof -i:8080 >/dev/null; then
+              echo '[Deploy] ERROR: Service is active but not listening on port 8080'
+              echo '[Deploy] Recent logs from journalctl:'
+              sudo journalctl -u eassist-api.service -n 20 --no-pager || echo 'No journalctl logs available'
               exit 1
-            fi"
+            fi
+            
+            echo '[Deploy] ✅ Deployment successful! Service is running via systemd.'
+            sudo systemctl status eassist-api.service --no-pager"
