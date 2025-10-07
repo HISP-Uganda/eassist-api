@@ -107,147 +107,149 @@ jobs:
             echo '[Deploy] Running migrations'
             npm run migrate:run 2>/dev/null || npm run migrate 2>/dev/null || echo '[Deploy] No migrations to run or migration failed (continuing)'
             
-            echo '[Deploy] Stopping existing processes safely'
-            # Stop node processes more carefully to avoid SSH session termination
-            NODE_PIDS=\$(pgrep -f 'node.*server.js' 2>/dev/null || true)
-            if [ -n \"\$NODE_PIDS\" ]; then
-              echo '[Deploy] Found node server processes, stopping gracefully...'
-              for pid in \$NODE_PIDS; do
-                if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
-                  echo '[Deploy] Stopping PID: '\$pid
-                  kill -TERM \"\$pid\" 2>/dev/null || true
-                fi
-              done
-              sleep 3
-              # Force kill if still running - continue even if this fails
-              REMAINING=\$(pgrep -f 'node.*server.js' 2>/dev/null || true)
-              if [ -n \"\$REMAINING\" ]; then
-                echo '[Deploy] Force killing remaining node processes'
-                for pid in \$REMAINING; do
-                  kill -9 \"\$pid\" 2>/dev/null || true
-                done
-              fi
-              echo '[Deploy] Node process cleanup completed'
-            else
-              echo '[Deploy] No existing node processes found'
-            fi
+            echo '[Deploy] Stopping existing service safely'
+            # Create a PID file location
+            PID_FILE=\"/tmp/eassist-api.pid\"
             
-            # Stop npm processes
-            NPM_PIDS=\$(pgrep -f 'npm.*start' 2>/dev/null || true)
-            if [ -n \"\$NPM_PIDS\" ]; then
-              echo '[Deploy] Found npm start processes, stopping...'
-              for pid in \$NPM_PIDS; do
-                if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
-                  echo '[Deploy] Stopping npm PID: '\$pid
-                  kill -TERM \"\$pid\" 2>/dev/null || true
-                fi
-              done
-              sleep 2
-              # Force kill remaining npm processes - continue even if this fails
-              REMAINING_NPM=\$(pgrep -f 'npm.*start' 2>/dev/null || true)
-              if [ -n \"\$REMAINING_NPM\" ]; then
-                echo '[Deploy] Force killing remaining npm processes'
-                for pid in \$REMAINING_NPM; do
-                  kill -9 \"\$pid\" 2>/dev/null || true
-                done
-              fi
-              echo '[Deploy] NPM process cleanup completed'
-            else
-              echo '[Deploy] No existing npm processes found'
-            fi
-            
-            # Free port 8080 if occupied
-            if command -v lsof >/dev/null 2>&1; then
-              PORT_PIDS=\$(lsof -ti:8080 2>/dev/null || true)
-              if [ -n \"\$PORT_PIDS\" ]; then
-                echo '[Deploy] Freeing port 8080'
-                for pid in \$PORT_PIDS; do
-                  if [ -n \"\$pid\" ] && [ \"\$pid\" != \"\$\$\" ]; then
-                    kill -TERM \"\$pid\" 2>/dev/null || true
-                    sleep 1
-                    kill -9 \"\$pid\" 2>/dev/null || true
+            # Try to read existing PID and stop gracefully
+            if [ -f \"\$PID_FILE\" ]; then
+              OLD_PID=\$(cat \"\$PID_FILE\" 2>/dev/null || echo '')
+              if [ -n \"\$OLD_PID\" ] && kill -0 \"\$OLD_PID\" 2>/dev/null; then
+                echo '[Deploy] Found running service with PID: '\$OLD_PID
+                echo '[Deploy] Stopping gracefully...'
+                kill -TERM \"\$OLD_PID\" 2>/dev/null || true
+                # Wait for graceful shutdown
+                for i in \$(seq 1 10); do
+                  if ! kill -0 \"\$OLD_PID\" 2>/dev/null; then
+                    echo '[Deploy] Service stopped gracefully'
+                    break
                   fi
+                  echo '[Deploy] Waiting for graceful shutdown... ('\$i'/10)'
+                  sleep 1
                 done
-                echo '[Deploy] Port cleanup completed'
-              else
-                echo '[Deploy] Port 8080 not in use'
+                # Force kill if still running
+                if kill -0 \"\$OLD_PID\" 2>/dev/null; then
+                  echo '[Deploy] Force killing stubborn process'
+                  kill -9 \"\$OLD_PID\" 2>/dev/null || true
+                fi
               fi
+              rm -f \"\$PID_FILE\"
             fi
             
-            echo '[Deploy] Waiting for cleanup to complete'
+            # Alternative cleanup method - use pkill with safer options
+            echo '[Deploy] Cleaning up any remaining processes'
+            # Use a more targeted approach
+            if command -v pkill >/dev/null 2>&1; then
+              # Kill processes by name pattern, but be more careful
+              pkill -f 'eassist.*server' 2>/dev/null || true
+              sleep 2
+              pkill -9 -f 'eassist.*server' 2>/dev/null || true
+            fi
+            
+            # Clean up port 8080 more safely
+            echo '[Deploy] Checking port 8080'
+            if command -v fuser >/dev/null 2>&1; then
+              # fuser is often more reliable than lsof for port cleanup
+              fuser -k 8080/tcp 2>/dev/null || true
+              sleep 1
+            elif command -v lsof >/dev/null 2>&1; then
+              # Fallback to lsof method but with timeout
+              timeout 5 bash -c '
+                PORT_PIDS=\$(lsof -ti:8080 2>/dev/null || true)
+                if [ -n \"\$PORT_PIDS\" ]; then
+                  echo \"Killing processes on port 8080: \$PORT_PIDS\"
+                  echo \"\$PORT_PIDS\" | xargs -r kill -TERM 2>/dev/null || true
+                  sleep 2
+                  echo \"\$PORT_PIDS\" | xargs -r kill -9 2>/dev/null || true
+                fi
+              ' 2>/dev/null || true
+            fi
+            
+            echo '[Deploy] Waiting for complete cleanup'
             sleep 3
             
-            # Final port check
+            # Final verification
             if command -v lsof >/dev/null 2>&1 && lsof -ti:8080 >/dev/null 2>&1; then
-              echo '[Deploy] WARNING: Port 8080 still in use, but continuing...'
-              lsof -i:8080 2>/dev/null || true
+              echo '[Deploy] WARNING: Port 8080 still occupied, but continuing'
             else
-              echo '[Deploy] Port 8080 is available'
+              echo '[Deploy] Port 8080 is free'
             fi
             
             echo '[Deploy] Starting new service'
             # Ensure log directory exists
-            if [ -w \"\$HOME\" ]; then
-              LOG_DIR=\"\$HOME/logs\"
-              mkdir -p \"\$LOG_DIR\" 2>/dev/null || LOG_DIR=\"/tmp/eassist-logs\"
-            else
+            LOG_DIR=\"\$HOME/logs\"
+            mkdir -p \"\$LOG_DIR\" 2>/dev/null || {
               LOG_DIR=\"/tmp/eassist-logs\"
-            fi
-            mkdir -p \"\$LOG_DIR\" 2>/dev/null || LOG_DIR=\"/tmp\"
+              mkdir -p \"\$LOG_DIR\" 2>/dev/null || LOG_DIR=\"/tmp\"
+            }
             LOG_FILE=\"\$LOG_DIR/eassist-api.out\"
             
-            echo '[Deploy] Starting service in background (log: '\$LOG_FILE')'
-            cd ${{ env.DEPLOY_PATH }} || { echo '[Deploy] Failed to change directory'; exit 1; }
+            echo '[Deploy] Starting service (log: '\$LOG_FILE')'
+            cd ${{ env.DEPLOY_PATH }}
             
-            # Start the service
+            # Start service and capture PID properly
             NODE_ENV=production PORT=8080 nohup npm start >\"\$LOG_FILE\" 2>&1 &
             NEW_PID=\$!
-            echo '[Deploy] Started new process with PID: '\$NEW_PID
             
-            # Verify the process started
+            # Save PID for next deployment
+            echo \$NEW_PID > \"\$PID_FILE\"
+            echo '[Deploy] Started service with PID: '\$NEW_PID' (saved to '\$PID_FILE')'
+            
+            # Verify process started
             sleep 3
             if ! kill -0 \"\$NEW_PID\" 2>/dev/null; then
-              echo '[Deploy] ERROR: New process failed to start'
-              echo '[Deploy] Recent log output:'
-              tail -20 \"\$LOG_FILE\" 2>/dev/null || echo 'No log output available'
+              echo '[Deploy] ERROR: Service failed to start'
+              echo '[Deploy] Log output:'
+              tail -50 \"\$LOG_FILE\" 2>/dev/null || echo 'No logs available'
+              rm -f \"\$PID_FILE\"
               exit 1
             fi
             
-            echo '[Deploy] Waiting for service to be ready...'
+            echo '[Deploy] Verifying service is ready'
             READY=0
-            for i in \$(seq 1 30); do
-              if command -v lsof >/dev/null 2>&1 && lsof -ti:8080 >/dev/null 2>&1; then
-                ACTIVE_PID=\$(lsof -ti:8080 2>/dev/null | head -1)
-                echo '[Deploy] ✅ Service is listening on port 8080 (PID: '\$ACTIVE_PID')'
+            for attempt in \$(seq 1 30); do
+              # Check if port is listening
+              if command -v nc >/dev/null 2>&1 && nc -z localhost 8080 2>/dev/null; then
+                echo '[Deploy] ✅ Service is responding on port 8080'
                 READY=1
                 break
-              elif command -v netstat >/dev/null 2>&1 && netstat -ln 2>/dev/null | grep -q ':8080.*LISTEN'; then
-                echo '[Deploy] ✅ Service is listening on port 8080 (detected via netstat)'
+              elif command -v lsof >/dev/null 2>&1 && lsof -ti:8080 >/dev/null 2>&1; then
+                echo '[Deploy] ✅ Service is listening on port 8080'
+                READY=1
+                break
+              elif command -v netstat >/dev/null 2>&1 && netstat -ln | grep -q ':8080.*LISTEN'; then
+                echo '[Deploy] ✅ Service detected via netstat'
                 READY=1
                 break
               fi
               
-              # Check if our process is still running
+              # Verify our process is still alive
               if ! kill -0 \"\$NEW_PID\" 2>/dev/null; then
-                echo '[Deploy] ERROR: Process '\$NEW_PID' died during startup'
-                echo '[Deploy] Recent log output:'
-                tail -20 \"\$LOG_FILE\" 2>/dev/null || echo 'No log output available'
+                echo '[Deploy] ERROR: Service process died during startup'
+                echo '[Deploy] Recent logs:'
+                tail -30 \"\$LOG_FILE\" 2>/dev/null || echo 'No logs available'
+                rm -f \"\$PID_FILE\"
                 exit 1
               fi
               
-              echo '[Deploy] Waiting for service startup... ('\$i'/30)'
+              echo '[Deploy] Waiting for service... ('\$attempt'/30)'
               sleep 2
             done
             
             if [ \"\$READY\" = \"1\" ]; then
-              echo '[Deploy] ✅ Deployment completed successfully at \$(date)'
+              echo '[Deploy] ✅ Deployment successful at \$(date)'
               echo '[Deploy] Service PID: '\$NEW_PID
+              echo '[Deploy] PID file: '\$PID_FILE
               echo '[Deploy] Log file: '\$LOG_FILE
+              echo '[Deploy] Service should be available shortly'
             else
-              echo '[Deploy] ❌ Service startup timeout'
-              echo '[Deploy] Process status:'
-              ps aux | grep \"\$NEW_PID\" || echo 'Process not found in ps output'
-              echo '[Deploy] Recent log output:'
-              tail -30 \"\$LOG_FILE\" 2>/dev/null || echo 'No log output available'
+              echo '[Deploy] ❌ Service startup timeout after 60 seconds'
+              echo '[Deploy] Process info:'
+              ps aux | grep \"\$NEW_PID\" 2>/dev/null || echo 'Process not found'
+              echo '[Deploy] Port check:'
+              netstat -ln | grep 8080 || echo 'Port 8080 not found in netstat'
+              echo '[Deploy] Recent logs:'
+              tail -50 \"\$LOG_FILE\" 2>/dev/null || echo 'No logs available'
+              rm -f \"\$PID_FILE\"
               exit 1
             fi"
