@@ -76,14 +76,66 @@ else
   echo "[WARN] No migrate script found; skipping migrations"
 fi
 
-# Restart systemd service (allowed by provisioning sudoers)
+# Stop all services and processes using port 8080
+echo "[INFO] Stopping all services on port 8080"
+
+# Stop systemd service if it exists
 if command -v systemctl >/dev/null 2>&1; then
-  echo "[INFO] Restarting eassist-api service"
-  sudo systemctl restart eassist-api
+  if systemctl is-active --quiet eassist-api 2>/dev/null; then
+    echo "[INFO] Stopping systemd service: eassist-api"
+    sudo systemctl stop eassist-api || true
+  fi
+fi
+
+# Kill any processes still using port 8080
+echo "[INFO] Checking for processes on port 8080"
+if command -v lsof >/dev/null 2>&1; then
+  PORT_PIDS=$(sudo lsof -ti:8080 2>/dev/null || true)
+  if [ -n "$PORT_PIDS" ]; then
+    echo "[INFO] Killing processes on port 8080: $PORT_PIDS"
+    echo "$PORT_PIDS" | xargs -r sudo kill -9 || true
+    sleep 2
+  fi
+fi
+
+# Alternative: use fuser if lsof not available
+if command -v fuser >/dev/null 2>&1; then
+  sudo fuser -k 8080/tcp 2>/dev/null || true
   sleep 1
+fi
+
+# Verify port is free
+if sudo lsof -ti:8080 >/dev/null 2>&1; then
+  echo "[ERROR] Port 8080 is still in use after cleanup!"
+  sudo lsof -i:8080 || true
+  exit 1
+fi
+
+echo "[INFO] Port 8080 is now free"
+
+# Start systemd service
+if command -v systemctl >/dev/null 2>&1; then
+  echo "[INFO] Starting eassist-api service"
+  sudo systemctl start eassist-api
+
+  # Wait for service to be ready
+  echo "[INFO] Waiting for service to start..."
+  for i in {1..15}; do
+    if sudo lsof -ti:8080 >/dev/null 2>&1; then
+      echo "[INFO] Service is now listening on port 8080"
+      sudo systemctl status --no-pager eassist-api || true
+      echo "[OK] Deploy complete"
+      exit 0
+    fi
+    sleep 1
+  done
+
+  echo "[ERROR] Service failed to start on port 8080"
   sudo systemctl status --no-pager eassist-api || true
+  sudo journalctl -u eassist-api -n 50 --no-pager || true
+  exit 1
 else
-  echo "[WARN] systemctl not found; ensure the service is restarted manually"
+  echo "[WARN] systemctl not found; ensure the service is started manually"
 fi
 
 echo "[OK] Deploy complete"

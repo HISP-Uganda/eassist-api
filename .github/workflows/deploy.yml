@@ -95,7 +95,69 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=yes \
             ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} \
-            "EASSIST_BUILD='${BUILD_LABEL}' GIT_SHA='${{ env.GIT_SHA }}' ${DEPLOY_PATH}/bin/deploy.sh"
+            'set -euo pipefail
+            echo "[Deploy] Starting deployment at $(date)"
+            cd ${{ env.DEPLOY_PATH }}
+            
+            echo "[Deploy] Installing dependencies"
+            npm ci --only=production --no-audit || npm install --only=production --no-audit
+            
+            echo "[Deploy] Running migrations"
+            npm run migrate:run 2>/dev/null || npm run migrate 2>/dev/null || echo "No migrations to run"
+            
+            echo "[Deploy] Stopping all processes on port 8080"
+            # Kill any process using port 8080
+            sudo fuser -k 8080/tcp 2>/dev/null || true
+            sudo lsof -ti:8080 | xargs -r sudo kill -9 2>/dev/null || true
+            sleep 2
+            
+            # Verify port is free
+            if sudo lsof -ti:8080 >/dev/null 2>&1; then
+              echo "[Deploy] ERROR: Port 8080 still in use"
+              sudo lsof -i:8080
+              exit 1
+            fi
+            
+            echo "[Deploy] Port 8080 is free, starting service"
+            
+            # Try systemd first if available
+            if command -v systemctl >/dev/null 2>&1 && sudo systemctl list-units --type=service --all | grep -q eassist-api; then
+              echo "[Deploy] Starting via systemd"
+              sudo systemctl start eassist-api
+              sleep 3
+              if sudo systemctl is-active eassist-api >/dev/null 2>&1; then
+                echo "[Deploy] ✅ Service started successfully via systemd"
+                sudo systemctl status eassist-api --no-pager
+                exit 0
+              else
+                echo "[Deploy] Systemd start failed, trying manual start"
+                sudo systemctl status eassist-api --no-pager || true
+              fi
+            fi
+            
+            # Manual start as fallback
+            echo "[Deploy] Starting manually with nohup"
+            sudo mkdir -p /var/log
+            sudo chown $USER /var/log/eassist-api.out 2>/dev/null || sudo touch /var/log/eassist-api.out
+            NODE_ENV=production PORT=8080 nohup npm start >/var/log/eassist-api.out 2>&1 &
+            START_PID=$!
+            echo "[Deploy] Started with PID: $START_PID"
+            
+            # Wait for service to start
+            for i in {1..15}; do
+              if sudo lsof -ti:8080 >/dev/null 2>&1; then
+                echo "[Deploy] ✅ Service is listening on port 8080"
+                echo "[Deploy] Deployment completed successfully"
+                exit 0
+              fi
+              echo "[Deploy] Waiting for service to start ($i/15)..."
+              sleep 1
+            done
+            
+            echo "[Deploy] ❌ Service failed to start"
+            echo "[Deploy] Recent logs:"
+            tail -50 /var/log/eassist-api.out 2>/dev/null || echo "No logs found"
+            exit 1'
 
       - name: Summary
         run: |
