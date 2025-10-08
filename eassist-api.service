@@ -8,8 +8,12 @@ User=gitdeploy
 Group=gitdeploy
 WorkingDirectory=/opt/eassist-api
 EnvironmentFile=/opt/eassist-api/.env
-Environment=NODE_ENV=production
-Environment=PORT=8080
+Environment="NODE_ENV=production"
+Environment="PORT=8080"
+
+# Pre-start script to ensure port is free
+ExecStartPre=/bin/sh -c 'while sudo lsof -ti:8080 >/dev/null; do echo "Port 8080 is busy, waiting..."; sudo fuser -k 8080/tcp; sleep 2; done'
+
 ExecStart=/usr/bin/node /opt/eassist-api/src/server.js
 Restart=always
 RestartSec=3
