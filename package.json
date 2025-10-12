@@ -25,7 +25,8 @@
     "seed:moh": "node scripts/seed-ministry-health.js",
     "generate:openapi": "node scripts/generate-openapi.js",
     "bootstrap:admin": "npm run seed:permissions-and-superuser",
-    "migrate:prep-local": "node scripts/generate-permissions-sql.js"
+    "migrate:prep-local": "node scripts/generate-permissions-sql.js",
+    "generate:api-docs": "node scripts/generate-openapi.js && node scripts/generate-readme-api.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

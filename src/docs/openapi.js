@@ -27,6 +27,29 @@ function opSummary(method, path) {
   return `${noun} ${path}`;
 }
 
+// Small helpers for descriptions
+function humanizeResource(parts) {
+  // parts is array of path segments excluding empty
+  const filtered = parts.filter((p) => p && !p.startsWith(":"));
+  if (!filtered.length) return "resource";
+  const last = filtered[filtered.length - 1];
+  const singular = last.endsWith("s") ? last.slice(0, -1) : last;
+  return { plural: last, singular };
+}
+
+function defaultDescription(method, rawPath) {
+  const parts = rawPath.split("/").filter(Boolean);
+  const res = humanizeResource(parts);
+  const hasId = parts.some((p) => p.startsWith(":"));
+  const methodL = method.toLowerCase();
+  if (methodL === "get" && !hasId) return `List ${res.plural} with pagination and filtering.`;
+  if (methodL === "get" && hasId) return `Get a ${res.singular} by ID.`;
+  if (methodL === "post" && !hasId) return `Create a new ${res.singular}.`;
+  if ((methodL === "put" || methodL === "patch") && hasId) return `Update an existing ${res.singular}.`;
+  if (methodL === "delete" && hasId) return `Delete a ${res.singular}.`;
+  return `Operation on ${res.plural}.`;
+}
+
 function authSecurity() {
   return [
     { bearerAuth: [] },
@@ -93,51 +116,261 @@ function fieldsParam() {
   };
 }
 
-// Manual overrides per path+method (add/merge params, requestBody)
-const OVERRIDES = {};
-
-function mergeOverride(op, path, method) {
-  const byPath = OVERRIDES[path];
-  if (!byPath) return op;
-  const add = byPath[method];
-  if (!add) return op;
-  const merged = { ...op };
-  if (add.parameters) {
-    merged.parameters = [...(op.parameters || []), ...add.parameters];
-  }
-  if (add.requestBody) {
-    merged.requestBody = add.requestBody;
-  }
-  if (add.responses) {
-    merged.responses = { ...(op.responses || {}), ...add.responses };
-  }
-  return merged;
+// Utility: merge parameters arrays by unique key (name+in); prefer override entries
+function mergeParams(base = [], override = []) {
+  const key = (p) => `${p.in}:${p.name}`;
+  const map = new Map();
+  for (const p of base) map.set(key(p), p);
+  for (const p of override) map.set(key(p), p); // override wins
+  return Array.from(map.values());
 }
 
-function buildCurlExamples(path, isPublic) {
-  const base = path.replace(/\?.*$/, "");
-  if (isPublic) {
-    return {
-      publicCurl: {
-        summary: "cURL (no auth required)",
-        value: `curl http://localhost:8080${base}`,
+// Manual overrides per path+method (add/merge params, requestBody)
+const OVERRIDES = {
+  // Tickets core list filters
+  "/api/tickets": {
+    get: {
+      parameters: [
+        { name: "ticket_key", in: "query", schema: { type: "string" }, description: "Exact ticket key (e.g., HD-2025-0001)" },
+        { name: "status_code", in: "query", schema: { type: "string" }, description: "Filter by status code (open, pending, closed, …)" },
+        { name: "priority_code", in: "query", schema: { type: "string" }, description: "Filter by priority code (low, medium, high, …)" },
+        { name: "severity_code", in: "query", schema: { type: "string" }, description: "Filter by severity code (minor, major, …)" },
+        { name: "system_id", in: "query", schema: { type: "string" }, description: "UUID of system" },
+        { name: "module_id", in: "query", schema: { type: "string" }, description: "UUID of system module" },
+        { name: "category_id", in: "query", schema: { type: "string" }, description: "UUID of issue category" },
+        { name: "assigned_agent_id", in: "query", schema: { type: "string" }, description: "UUID of assigned agent" },
+        { name: "group_id", in: "query", schema: { type: "integer" }, description: "Support group id" },
+        { name: "tier_id", in: "query", schema: { type: "integer" }, description: "Tier id" },
+        { name: "unassigned", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Only tickets without assigned agent (true)" },
+        { name: "reporter_email", in: "query", schema: { type: "string", format: "email" }, description: "Filter by reporter email" },
+        { name: "created_from", in: "query", schema: { type: "string", format: "date-time" }, description: "Created at >= (ISO)" },
+        { name: "created_to", in: "query", schema: { type: "string", format: "date-time" }, description: "Created at <= (ISO)" },
+        { name: "sort", in: "query", schema: { type: "string", enum: ["created_at ASC","created_at DESC","updated_at ASC","updated_at DESC","ticket_key ASC","ticket_key DESC","priority_id ASC","priority_id DESC","severity_id ASC","severity_id DESC","status_id ASC","status_id DESC"] }, description: "Safe sort fields with direction" }
+      ],
+      description: "List tickets with advanced filters and pagination.",
+      summary: "List tickets",
+    },
+  },
+  // Ticket actions request bodies
+  "/api/tickets/:id/assign": {
+    post: {
+      requestBody: {
+        required: true,
+        content: { "application/json": { schema: { type: "object", required: ["assigned_agent_id"], properties: { assigned_agent_id: { type: "string", description: "UUID of agent" } } } } }
       },
-    };
+      description: "Assign a ticket to an agent by UUID.",
+      summary: "Assign ticket",
+    }
+  },
+  "/api/tickets/:id/status": {
+    post: {
+      requestBody: {
+        required: true,
+        content: { "application/json": { schema: { type: "object", properties: { status_id: { type: "string", nullable: true }, status_code: { type: "string", nullable: true } }, anyOf: [ { required: ["status_id"] }, { required: ["status_code"] } ] } } }
+      },
+      description: "Change the status of a ticket by id or code.",
+      summary: "Set ticket status",
+    }
+  },
+  "/api/tickets/:id/priority": {
+    post: {
+      requestBody: {
+        required: true,
+        content: { "application/json": { schema: { type: "object", properties: { priority_id: { type: "string", nullable: true }, priority_code: { type: "string", nullable: true } }, anyOf: [ { required: ["priority_id"] }, { required: ["priority_code"] } ] } } }
+      },
+      description: "Change the priority of a ticket by id or code.",
+      summary: "Set ticket priority",
+    }
+  },
+  "/api/tickets/:id/severity": {
+    post: {
+      requestBody: {
+        required: true,
+        content: { "application/json": { schema: { type: "object", properties: { severity_id: { type: "string", nullable: true }, severity_code: { type: "string", nullable: true } }, anyOf: [ { required: ["severity_id"] }, { required: ["severity_code"] } ] } } }
+      },
+      description: "Change the severity of a ticket by id or code.",
+      summary: "Set ticket severity",
+    }
+  },
+  // Ticket scoped lists include pagination/search filters
+  "/api/tickets/:id/notes": {
+    get: { parameters: [
+      { name: "page", in: "query", schema: { type: "integer", minimum: 1 } },
+      { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } },
+      { name: "is_internal", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Filter internal vs public notes" },
+      { name: "q", in: "query", schema: { type: "string" }, description: "Search body contains" }
+    ], description: "List notes for a ticket.", summary: "List ticket notes" },
+    post: { requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["body"], properties: { body: { type: "string" }, is_internal: { type: "boolean", default: false } } } } } }, description: "Add a note to a ticket.", summary: "Create ticket note" }
+  },
+  "/api/tickets/:id/attachments": {
+    get: { parameters: [
+      { name: "page", in: "query", schema: { type: "integer", minimum: 1 } },
+      { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } },
+      { name: "file_type", in: "query", schema: { type: "string" } },
+      { name: "q", in: "query", schema: { type: "string" }, description: "Search file_name contains" }
+    ], description: "List attachments for a ticket.", summary: "List ticket attachments" },
+    post: { requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["file_name","file_type","file_size_bytes","storage_path"], properties: { file_name: { type: "string" }, file_type: { type: "string" }, file_size_bytes: { type: "integer" }, storage_path: { type: "string" } } } } } }, description: "Add an attachment record for a ticket.", summary: "Create ticket attachment" }
+  },
+  "/api/tickets/:id/events": {
+    get: { parameters: [
+      { name: "page", in: "query", schema: { type: "integer" } },
+      { name: "pageSize", in: "query", schema: { type: "integer", maximum: 100 } },
+      { name: "event_type", in: "query", schema: { type: "string" } }
+    ], description: "List events for a ticket.", summary: "List ticket events" }
+  },
+  "/api/tickets/:id/watchers": {
+    get: { parameters: [
+      { name: "page", in: "query", schema: { type: "integer" } },
+      { name: "pageSize", in: "query", schema: { type: "integer", maximum: 100 } },
+      { name: "notify", in: "query", schema: { type: "string", enum: ["true","false"] } }
+    ], description: "List watchers for a ticket.", summary: "List ticket watchers" },
+    post: { requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { user_id: { type: "string", nullable: true }, email: { type: "string", format: "email", nullable: true }, notify: { type: "boolean", default: true } }, anyOf: [ { required: ["user_id"] }, { required: ["email"] } ] } } } }, description: "Add a watcher to a ticket.", summary: "Create ticket watcher" }
+  },
+  // Top-level tickets sub-resources filters
+  "/api/tickets/notes": { get: { parameters: [
+    { name: "page", in: "query", schema: { type: "integer" } },
+    { name: "pageSize", in: "query", schema: { type: "integer" } },
+    { name: "ticket_id", in: "query", schema: { type: "string" } },
+    { name: "user_id", in: "query", schema: { type: "string" } },
+    { name: "is_internal", in: "query", schema: { type: "string", enum: ["true","false"] } },
+    { name: "q", in: "query", schema: { type: "string" } },
+    { name: "created_from", in: "query", schema: { type: "string", format: "date-time" } },
+    { name: "created_to", in: "query", schema: { type: "string", format: "date-time" } }
+  ] , description: "List notes across tickets.", summary: "List notes" }, post: { requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["ticket_id","body"], properties: { ticket_id: { type: "string" }, user_id: { type: "string", nullable: true }, body: { type: "string" }, is_internal: { type: "boolean", default: false } } } } } }, description: "Create a note for a ticket.", summary: "Create note" } },
+  "/api/tickets/attachments": { get: { parameters: [
+    { name: "page", in: "query", schema: { type: "integer" } },
+    { name: "pageSize", in: "query", schema: { type: "integer" } },
+    { name: "ticket_id", in: "query", schema: { type: "string" } },
+    { name: "uploaded_by", in: "query", schema: { type: "string" } },
+    { name: "file_type", in: "query", schema: { type: "string" } },
+    { name: "q", in: "query", schema: { type: "string" } },
+    { name: "uploaded_from", in: "query", schema: { type: "string", format: "date-time" } },
+    { name: "uploaded_to", in: "query", schema: { type: "string", format: "date-time" } }
+  ] , description: "List attachments across tickets.", summary: "List attachments" } },
+  "/api/tickets/events": { get: { parameters: [
+    { name: "page", in: "query", schema: { type: "integer" } },
+    { name: "pageSize", in: "query", schema: { type: "integer" } },
+    { name: "ticket_id", in: "query", schema: { type: "string" } },
+    { name: "event_type", in: "query", schema: { type: "string" } },
+    { name: "actor_user_id", in: "query", schema: { type: "string" } },
+    { name: "q", in: "query", schema: { type: "string" } },
+    { name: "occurred_from", in: "query", schema: { type: "string", format: "date-time" } },
+    { name: "occurred_to", in: "query", schema: { type: "string", format: "date-time" } }
+  ] , description: "List ticket events across system.", summary: "List ticket events" } },
+  "/api/tickets/watchers": { get: { parameters: [
+    { name: "page", in: "query", schema: { type: "integer" } },
+    { name: "pageSize", in: "query", schema: { type: "integer" } },
+    { name: "ticket_id", in: "query", schema: { type: "string" } },
+    { name: "user_id", in: "query", schema: { type: "string" } },
+    { name: "email", in: "query", schema: { type: "string", format: "email" } },
+    { name: "notify", in: "query", schema: { type: "string", enum: ["true","false"] } }
+  ] , description: "List ticket watchers across system.", summary: "List ticket watchers" } },
+
+  // Public endpoints filters and payloads
+  "/api/public/faqs": { get: { parameters: [
+    { name: "page", in: "query", schema: { type: "integer" } },
+    { name: "pageSize", in: "query", schema: { type: "integer" } },
+    { name: "q", in: "query", schema: { type: "string" } },
+    { name: "system_category_id", in: "query", schema: { type: "string" } }
+  ] , description: "List published FAQs.", summary: "List FAQs" } },
+  "/api/public/kb/articles": { get: { parameters: [
+    { name: "page", in: "query", schema: { type: "integer" } },
+    { name: "pageSize", in: "query", schema: { type: "integer" } },
+    { name: "q", in: "query", schema: { type: "string" } }
+  ] , description: "List published knowledge base articles.", summary: "List public KB articles" } },
+  "/api/public/videos": { get: { parameters: [
+    { name: "page", in: "query", schema: { type: "integer" } },
+    { name: "pageSize", in: "query", schema: { type: "integer" } },
+    { name: "q", in: "query", schema: { type: "string" } },
+    { name: "category_id", in: "query", schema: { type: "string" }, description: "UUID" },
+    { name: "system_category_id", in: "query", schema: { type: "integer" } },
+    { name: "language", in: "query", schema: { type: "string" } }
+  ] , description: "List published training videos.", summary: "List public videos" } },
+  "/api/public/videos/categories": { get: { parameters: [
+    { name: "page", in: "query", schema: { type: "integer" } },
+    { name: "pageSize", in: "query", schema: { type: "integer" } },
+    { name: "q", in: "query", schema: { type: "string" } }
+  ] , description: "List public video categories.", summary: "List public video categories" } },
+  "/api/public/search": { get: { parameters: [ { name: "q", in: "query", schema: { type: "string" } } ], description: "Unified public search across content.", summary: "Public search" } },
+
+  // System modules filters
+  "/api/system/files": { get: { parameters: [
+    { name: "page", in: "query", schema: { type: "integer" } },
+    { name: "pageSize", in: "query", schema: { type: "integer" } },
+    { name: "ticket_id", in: "query", schema: { type: "string" } },
+    { name: "file_type", in: "query", schema: { type: "string" } },
+    { name: "q", in: "query", schema: { type: "string" }, description: "Search file_name contains" }
+  ] , description: "List system files.", summary: "List files" } },
+  "/api/system/audit": { get: { parameters: [
+    { name: "page", in: "query", schema: { type: "integer" } },
+    { name: "pageSize", in: "query", schema: { type: "integer" } },
+    { name: "actor_user_id", in: "query", schema: { type: "string" } },
+    { name: "entity", in: "query", schema: { type: "string" } },
+    { name: "entity_id", in: "query", schema: { type: "string" } },
+    { name: "action", in: "query", schema: { type: "string" } },
+    { name: "q", in: "query", schema: { type: "string" } },
+    { name: "from", in: "query", schema: { type: "string", format: "date-time" } },
+    { name: "to", in: "query", schema: { type: "string", format: "date-time" } }
+  ] , description: "List audit events.", summary: "List audit events" } },
+  "/api/system/inbox/emails": { get: { parameters: [
+    { name: "page", in: "query", schema: { type: "integer" } },
+    { name: "pageSize", in: "query", schema: { type: "integer" } },
+    { name: "processing_status", in: "query", schema: { type: "string" } },
+    { name: "from_email", in: "query", schema: { type: "string", format: "email" } },
+    { name: "created_ticket_id", in: "query", schema: { type: "string" } },
+    { name: "from", in: "query", schema: { type: "string", format: "date-time" } },
+    { name: "to", in: "query", schema: { type: "string", format: "date-time" } },
+    { name: "q", in: "query", schema: { type: "string" } }
+  ] , description: "List inbox emails ingested by the system.", summary: "List inbox emails" } },
+  "/api/system/users": {
+    get: { parameters: [ { name: "q", in: "query", schema: { type: "string" }, description: "Search email or full_name" } ], description: "List users.", summary: "List users" },
+    post: { requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["email"], properties: { email: { type: "string", format: "email" }, full_name: { type: "string" }, password: { type: "string", description: "Plaintext; server hashes" }, phone: { type: "string" }, is_active: { type: "boolean" }, created_at: { type: "string", format: "date-time" }, roles: { type: "array", items: { oneOf: [ { type: "string" }, { type: "object", additionalProperties: true } ] }, description: "Array of role ids/codes/names" }, tiers: { type: "array", items: { oneOf: [ { type: "integer" }, { type: "object", additionalProperties: true } ] } }, support_groups: { type: "array", items: { oneOf: [ { type: "integer" }, { type: "object", additionalProperties: true } ] } } } } } } }, description: "Create a user.", summary: "Create user" }
+  },
+  "/api/system/roles": { get: { parameters: [ { name: "q", in: "query", schema: { type: "string" }, description: "Search name/description" } ], description: "List roles.", summary: "List roles" }, post: { requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["name"], properties: { name: { type: "string" }, code: { type: "string", nullable: true }, description: { type: "string", nullable: true } } } } } }, description: "Create a role.", summary: "Create role" } },
+
+  // Knowledge filters
+  "/api/knowledge/kb-articles": { get: { parameters: [ { name: "q", in: "query", schema: { type: "string" } } ] , description: "List KB articles.", summary: "List KB articles" } },
+  "/api/knowledge/kb/tags": { get: { parameters: [ { name: "q", in: "query", schema: { type: "string" } } ] , description: "List KB tags.", summary: "List KB tags" } },
+  "/api/knowledge/kb/ratings": { get: { parameters: [ { name: "article_id", in: "query", schema: { type: "string" } }, { name: "user_id", in: "query", schema: { type: "string" } } ] , description: "List KB ratings.", summary: "List KB ratings" } },
+  "/api/knowledge/videos": { get: { parameters: [ { name: "q", in: "query", schema: { type: "string" } , description: "Search title/description" }, { name: "category_id", in: "query", schema: { type: "string" } }, { name: "system_category_id", in: "query", schema: { type: "integer" } }, { name: "language", in: "query", schema: { type: "string" } }, { name: "is_published", in: "query", schema: { type: "string", enum: ["true","false"] } } ] , description: "List videos.", summary: "List videos" } },
+};
+
+// Merge override settings into an operation; supports parameters, requestBody, responses, summary, description, security
+function mergeOverride(op, rawPath, method) {
+  const entry = OVERRIDES[rawPath];
+  if (!entry) return op;
+  const o = entry[method];
+  if (!o) return op;
+  const next = { ...op };
+  if (o.summary) next.summary = o.summary;
+  if (o.description) next.description = o.description;
+  if (o.security) next.security = o.security;
+  if (Array.isArray(o.parameters)) {
+    next.parameters = mergeParams(op.parameters || [], o.parameters);
   }
-  return {
-    bearerCurl: {
-      summary: "cURL with Bearer JWT",
-      value: `curl -H 'Authorization: Bearer ${"{TOKEN}"}' http://localhost:8080${base}`,
-    },
-    basicCurl: {
-      summary: "cURL with Basic auth",
-      value: `curl -u 'user@example.com:password' http://localhost:8080${base}`,
-    },
-    apiKeyCurl: {
-      summary: "cURL with API key",
-      value: `curl -H 'X-API-Key: ${"{RAW_API_KEY}"}' http://localhost:8080${base}`,
-    },
-  };
+  if (o.requestBody) {
+    next.requestBody = o.requestBody; // override wins entirely
+  }
+  if (o.responses) {
+    next.responses = { ...(op.responses || {}), ...o.responses };
+  }
+  return next;
+}
+
+// Build example curl commands for success responses
+function buildCurlExamples(path, method = "get", isPublic = false) {
+  const url = `http://localhost:8080${path}`;
+  const m = method.toUpperCase();
+  const needsBody = ["POST", "PUT", "PATCH"].includes(m);
+  const data = needsBody ? " -H 'Content-Type: application/json' -d '{}'" : "";
+  const base = `curl -s -X ${m} '${url}'`;
+  const bearerCurl = `${base} -H 'Authorization: Bearer $ACCESS_TOKEN'${data}`;
+  const basicCurl = `${base} -u 'user@example.com:password'${data}`;
+  const apiKeyCurl = `${base} -H 'X-API-Key: $API_KEY'${data}`;
+  const publicCurl = `${base}${data}`;
+  const examples = { bearerCurl: { value: bearerCurl }, apiKeyCurl: { value: apiKeyCurl }, basicCurl: { value: basicCurl } };
+  if (isPublic) examples.publicCurl = { value: publicCurl };
+  return examples;
 }
 
 // Inline error schema (extends ErrorResponseBase) tailored by path/method
@@ -559,7 +792,7 @@ export default function buildOpenApi(app) {
         tags: [tag],
         summary: opSummary(method, e.path),
         description:
-          "Auto-generated endpoint. See examples for common params. Errors include endpoint-specific details and messages inline.",
+          defaultDescription(method, e.path),
         security: isNoAuthPath(e.path) ? [] : authSecurity(),
         parameters: [...params],
         responses: {
@@ -568,7 +801,7 @@ export default function buildOpenApi(app) {
             content: {
               "application/json": {
                 schema: { type: "object" },
-                examples: buildCurlExamples(e.path, isNoAuthPath(e.path)),
+                examples: buildCurlExamples(e.path, method, isNoAuthPath(e.path)),
               },
             },
           },
@@ -600,7 +833,7 @@ export default function buildOpenApi(app) {
         op.parameters = [...op.parameters, fieldsParam()];
         // Include pagination/search only for collection-like endpoints (no path params)
         if (pathParamNames.length === 0) {
-          op.parameters = [...op.parameters, ...listQueryParams()];
+          op.parameters = mergeParams(op.parameters, listQueryParams());
         }
       }
       if (["post", "put", "patch"].includes(method)) {
