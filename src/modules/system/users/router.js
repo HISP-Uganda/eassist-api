@@ -7,6 +7,7 @@ import { requireAnyPermission } from "../../../middleware/auth.js";
 import { getUserPermissions } from "../../../middleware/auth.js";
 import { PERMISSIONS } from "../../../constants/permissions.js";
 import { BadRequest } from "../../../utils/errors.js";
+import { listDetailed } from "../../../utils/relations.js";
 const r = Router();
 const t = "users";
 
@@ -130,14 +131,16 @@ r.get(
         `SELECT count(*)::int c FROM ${t} ${whereSql}`,
         params
       );
-      const { rows } = await pool.query(
-        `SELECT * FROM ${t} ${whereSql} ORDER BY created_at DESC LIMIT $${
-          params.length + 1
-        } OFFSET $${params.length + 2}`,
-        [...params, limit, offset]
-      );
+
+      const items = await listDetailed(t, req, 'created_at DESC', {
+        whereSql,
+        params,
+        limit,
+        offset,
+      });
+
       res.json({
-        items: rows.map(scrub),
+        items: items.map(scrub),
         page,
         pageSize,
         total: tot[0]?.c || 0,
