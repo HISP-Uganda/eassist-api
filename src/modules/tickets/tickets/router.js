@@ -704,4 +704,142 @@ r.post(
   }
 );
 
+r.put(
+  "/:id/notes/:nid",
+  requireAnyPermission(
+    PERMISSIONS.TICKETS_NOTES_ADD,
+    PERMISSIONS.TICKETS_MANAGE
+  ),
+  async (req, res, next) => {
+    try {
+      const { id, nid } = req.params;
+      const fields = {};
+      if (Object.prototype.hasOwnProperty.call(req.body, 'body')) fields.body = req.body.body;
+      if (Object.prototype.hasOwnProperty.call(req.body, 'is_internal')) fields.is_internal = !!req.body.is_internal;
+      const keys = Object.keys(fields);
+      if (!keys.length) return next(BadRequest('No updatable fields provided'));
+      const sets = [];
+      const params = [];
+      let i = 0;
+      for (const k of keys) { i++; params.push(fields[k]); sets.push(`${k}=$${i}`); }
+      params.push(nid); i++; // $i is nid
+      params.push(id); i++;  // $i is ticket id
+      const sql = `UPDATE ticket_notes SET ${sets.join(', ')} WHERE id=$${i-1} AND ticket_id=$${i} RETURNING *`;
+      const { rows } = await pool.query(sql, params);
+      if (!rows[0]) return next(NotFound('Note not found'));
+      await pool.query(
+        `INSERT INTO ticket_events (ticket_id,event_type,details) VALUES ($1,'note_updated',$2::jsonb)`,
+        [id, JSON.stringify({ note_id: nid })]
+      );
+      res.json(rows[0]);
+    } catch (e) { next(e); }
+  }
+);
+
+r.delete(
+  "/:id/notes/:nid",
+  requireAnyPermission(
+    PERMISSIONS.TICKETS_NOTES_ADD,
+    PERMISSIONS.TICKETS_MANAGE
+  ),
+  async (req, res, next) => {
+    try {
+      const { id, nid } = req.params;
+      const { rows } = await pool.query(
+        `DELETE FROM ticket_notes WHERE id=$1 AND ticket_id=$2 RETURNING id`,
+        [nid, id]
+      );
+      if (!rows[0]) return next(NotFound('Note not found'));
+      await pool.query(
+        `INSERT INTO ticket_events (ticket_id,event_type,details) VALUES ($1,'note_deleted',$2::jsonb)`,
+        [id, JSON.stringify({ note_id: nid })]
+      );
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  }
+);
+
+r.put(
+  "/:id/attachments/:aid",
+  requireAnyPermission(
+    PERMISSIONS.TICKETS_ATTACHMENTS_ADD,
+    PERMISSIONS.TICKETS_MANAGE
+  ),
+  async (req, res, next) => {
+    try {
+      const { id, aid } = req.params;
+      const fields = {};
+      if (Object.prototype.hasOwnProperty.call(req.body, 'file_name')) fields.file_name = req.body.file_name;
+      if (Object.prototype.hasOwnProperty.call(req.body, 'file_type')) fields.file_type = req.body.file_type;
+      const keys = Object.keys(fields);
+      if (!keys.length) return next(BadRequest('No updatable fields provided'));
+      const sets = [];
+      const params = [];
+      let i = 0;
+      for (const k of keys) { i++; params.push(fields[k]); sets.push(`${k}=$${i}`); }
+      params.push(aid); i++;
+      params.push(id); i++;
+      const sql = `UPDATE ticket_attachments SET ${sets.join(', ')} WHERE id=$${i-1} AND ticket_id=$${i} RETURNING *`;
+      const { rows } = await pool.query(sql, params);
+      if (!rows[0]) return next(NotFound('Attachment not found'));
+      await pool.query(
+        `INSERT INTO ticket_events (ticket_id,event_type,details) VALUES ($1,'attachment_updated',$2::jsonb)`,
+        [id, JSON.stringify({ attachment_id: aid })]
+      );
+      res.json(rows[0]);
+    } catch (e) { next(e); }
+  }
+);
+
+r.delete(
+  "/:id/attachments/:aid",
+  requireAnyPermission(
+    PERMISSIONS.TICKETS_ATTACHMENTS_ADD,
+    PERMISSIONS.TICKETS_MANAGE
+  ),
+  async (req, res, next) => {
+    try {
+      const { id, aid } = req.params;
+      const { rows } = await pool.query(
+        `DELETE FROM ticket_attachments WHERE id=$1 AND ticket_id=$2 RETURNING id`,
+        [aid, id]
+      );
+      if (!rows[0]) return next(NotFound('Attachment not found'));
+      await pool.query(
+        `INSERT INTO ticket_events (ticket_id,event_type,details) VALUES ($1,'attachment_deleted',$2::jsonb)`,
+        [id, JSON.stringify({ attachment_id: aid })]
+      );
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  }
+);
+
+r.put(
+  "/:id/watchers/:wid",
+  requireAnyPermission(
+    PERMISSIONS.TICKETS_WATCHERS_ADD,
+    PERMISSIONS.TICKETS_MANAGE
+  ),
+  async (req, res, next) => {
+    try {
+      const { id, wid } = req.params;
+      const fields = {};
+      if (Object.prototype.hasOwnProperty.call(req.body, 'notify')) fields.notify = !!req.body.notify;
+      if (Object.prototype.hasOwnProperty.call(req.body, 'email')) fields.email = req.body.email;
+      const keys = Object.keys(fields);
+      if (!keys.length) return next(BadRequest('No updatable fields provided'));
+      const sets = [];
+      const params = [];
+      let i = 0;
+      for (const k of keys) { i++; params.push(fields[k]); sets.push(`${k}=$${i}`); }
+      params.push(wid); i++;
+      params.push(id); i++;
+      const sql = `UPDATE ticket_watchers SET ${sets.join(', ')} WHERE id=$${i-1} AND ticket_id=$${i} RETURNING *`;
+      const { rows } = await pool.query(sql, params);
+      if (!rows[0]) return next(NotFound('Watcher not found'));
+      res.json(rows[0]);
+    } catch (e) { next(e); }
+  }
+);
+
 export default r;
