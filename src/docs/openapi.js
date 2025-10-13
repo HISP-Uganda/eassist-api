@@ -903,7 +903,7 @@ export default function buildOpenApi(app) {
                     category_id: { type: 'string' },
                     priority_id: { type: 'string' },
                     severity_id: { type: 'string' },
-                    source_code: { type: 'string', description: 'Explicit source code/name; defaults to Self Service (public) or Agent Service (authenticated)' }
+                    source_code: { type: 'string', description: 'Explicit source code/name; defaults to Self Service (public) or Agent Reporting (authenticated). Common values: agent_reporting, phone_call, email, verbal, social_media, community_of_practice.' }
                   },
                   additionalProperties: false
                 },
