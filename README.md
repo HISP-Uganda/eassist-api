@@ -266,6 +266,37 @@ Combine both for optimal performance:
 GET /api/tickets?fields=ticket_key,reporter_user,system&with_attrs_reporter_user=id,email&with_attrs_system=id,name
 ```
 
+### Nested expansion for users (roles and permissions)
+
+The users endpoints support nested expansion of roles, and each role’s permissions:
+
+- Expand user roles:
+  - `GET /api/system/users?expand=roles`
+- Expand roles and their permissions:
+  - `GET /api/system/users?expand=roles,roles.permissions`
+- Combine with field selection:
+  - `GET /api/system/users?expand=roles,roles.permissions&fields=id,email,full_name,roles.id,roles.name,roles.permissions.code`
+
+Also works on a single user:
+- `GET /api/system/users/:id?expand=roles,roles.permissions&fields=id,email,roles.name,roles.permissions.code`
+
+Notes:
+- Sensitive fields like `password_hash` are always stripped.
+- If `roles.permissions` is requested but a role has no permissions, `permissions` will be an empty array.
+
+### Bracket-based select syntax (compact nesting)
+
+As a shorthand for `expand` + `fields`, use `select=` with a bracketed structure:
+
+- `GET /api/system/users?select=users[id,email,full_name,roles[id,name,permissions[code,name]]]`
+
+This is equivalent to:
+- `expand=roles,roles.permissions`
+- `fields=id,email,full_name,roles.id,roles.name,roles.permissions.code,roles.permissions.name`
+
+Tip:
+- The top-level identifier (e.g., `users[...]`) is optional; `select=[id,email,roles[id]]` also works.
+
 ---
 
 ## OpenAPI docs
@@ -3257,244 +3288,6 @@ curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/:id/wa
 curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/:id/watchers/:wid
 ```
 
-## tickets/attachments
-
-- `GET` `/api/tickets/attachments` — GET /api/tickets/attachments
-  - Auth: Required
-  - Query params: `fields`, `page`, `pageSize`, `q`
-  - Request body: none
-  - Success: HTTP 200 — TicketList
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/attachments
-```
-
-- `POST` `/api/tickets/attachments` — POST /api/tickets/attachments
-  - Auth: Required
-  - Request body: TicketAttachment
-  - Success: HTTP 201 — TicketList
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/attachments
-```
-
-- `DELETE` `/api/tickets/attachments/{id}` — DELETE /api/tickets/attachments/:id
-  - Auth: Required
-  - Path params: `id`
-  - Request body: none
-  - Success: HTTP 200 — Ticket
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/attachments/:id
-```
-
-- `GET` `/api/tickets/attachments/{id}` — GET /api/tickets/attachments/:id
-  - Auth: Required
-  - Path params: `id`
-  - Query params: `fields`
-  - Request body: none
-  - Success: HTTP 200 — Ticket
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/attachments/:id
-```
-
-- `PUT` `/api/tickets/attachments/{id}` — PUT /api/tickets/attachments/:id
-  - Auth: Required
-  - Path params: `id`
-  - Request body: TicketAttachment
-  - Success: HTTP 200 — Ticket
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/attachments/:id
-```
-
-## tickets/events
-
-- `GET` `/api/tickets/events` — GET /api/tickets/events
-  - Auth: Required
-  - Query params: `fields`, `page`, `pageSize`, `q`
-  - Request body: none
-  - Success: HTTP 200 — TicketList
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/events
-```
-
-- `POST` `/api/tickets/events` — POST /api/tickets/events
-  - Auth: Required
-  - Request body: object
-  - Success: HTTP 201 — TicketList
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/events
-```
-
-- `DELETE` `/api/tickets/events/{id}` — DELETE /api/tickets/events/:id
-  - Auth: Required
-  - Path params: `id`
-  - Request body: none
-  - Success: HTTP 200 — Ticket
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/events/:id
-```
-
-- `GET` `/api/tickets/events/{id}` — GET /api/tickets/events/:id
-  - Auth: Required
-  - Path params: `id`
-  - Query params: `fields`
-  - Request body: none
-  - Success: HTTP 200 — Ticket
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/events/:id
-```
-
-- `PUT` `/api/tickets/events/{id}` — PUT /api/tickets/events/:id
-  - Auth: Required
-  - Path params: `id`
-  - Request body: object
-  - Success: HTTP 200 — Ticket
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/events/:id
-```
-
-## tickets/notes
-
-- `GET` `/api/tickets/notes` — GET /api/tickets/notes
-  - Auth: Required
-  - Query params: `fields`, `page`, `pageSize`, `q`
-  - Request body: none
-  - Success: HTTP 200 — TicketList
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/notes
-```
-
-- `POST` `/api/tickets/notes` — POST /api/tickets/notes
-  - Auth: Required
-  - Request body: TicketNote
-  - Success: HTTP 201 — TicketList
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/notes
-```
-
-- `DELETE` `/api/tickets/notes/{id}` — DELETE /api/tickets/notes/:id
-  - Auth: Required
-  - Path params: `id`
-  - Request body: none
-  - Success: HTTP 200 — Ticket
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/notes/:id
-```
-
-- `GET` `/api/tickets/notes/{id}` — GET /api/tickets/notes/:id
-  - Auth: Required
-  - Path params: `id`
-  - Query params: `fields`
-  - Request body: none
-  - Success: HTTP 200 — Ticket
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/notes/:id
-```
-
-- `PUT` `/api/tickets/notes/{id}` — PUT /api/tickets/notes/:id
-  - Auth: Required
-  - Path params: `id`
-  - Request body: TicketNote
-  - Success: HTTP 200 — Ticket
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/notes/:id
-```
-
-## tickets/watchers
-
-- `GET` `/api/tickets/watchers` — GET /api/tickets/watchers
-  - Auth: Required
-  - Query params: `fields`, `page`, `pageSize`, `q`
-  - Request body: none
-  - Success: HTTP 200 — TicketList
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/watchers
-```
-
-- `POST` `/api/tickets/watchers` — POST /api/tickets/watchers
-  - Auth: Required
-  - Request body: object
-  - Success: HTTP 201 — TicketList
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/watchers
-```
-
-- `DELETE` `/api/tickets/watchers/{id}` — DELETE /api/tickets/watchers/:id
-  - Auth: Required
-  - Path params: `id`
-  - Request body: none
-  - Success: HTTP 200 — Ticket
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/watchers/:id
-```
-
-- `GET` `/api/tickets/watchers/{id}` — GET /api/tickets/watchers/:id
-  - Auth: Required
-  - Path params: `id`
-  - Query params: `fields`
-  - Request body: none
-  - Success: HTTP 200 — Ticket
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/watchers/:id
-```
-
-- `PUT` `/api/tickets/watchers/{id}` — PUT /api/tickets/watchers/:id
-  - Auth: Required
-  - Path params: `id`
-  - Request body: object
-  - Success: HTTP 200 — Ticket
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/watchers/:id
-```
-
-- `POST` `/api/tickets/watchers/ticket/{ticketId}/email` — POST /api/tickets/watchers/ticket/:ticketId/email
-  - Auth: Required
-  - Path params: `ticketId`
-  - Request body: object
-  - Success: HTTP 201 — TicketList
-  - Example:
-
-```bash
-curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tickets/watchers/ticket/:ticketId/email
-```
 
 ## tokens/api-keys
 

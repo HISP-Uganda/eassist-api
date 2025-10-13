@@ -2,7 +2,7 @@ import { Router } from "express";
 import { create, update, remove, read, pickFields } from "../../../utils/crud.js";
 import pool from "../../../db/pool.js";
 import { parsePagination } from "../../../utils/pagination.js";
-import { readDetailed } from "../../../utils/relations.js";
+import { listDetailed, readDetailed } from "../../../utils/relations.js";
 const r = Router();
 const t = "files";
 
@@ -28,23 +28,9 @@ r.get("/", async (req, res, next) => {
       `SELECT count(*)::int c FROM ${t} ${whereSql}`,
       params
     );
-    const { rows } = await pool.query(
-      `SELECT * FROM ${t} ${whereSql} ORDER BY created_at DESC LIMIT $${
-        params.length + 1
-      } OFFSET $${params.length + 2}`,
-      [...params, limit, offset]
-    );
-    // Enrich rows with uploaded_by user in a single query to avoid N+1
-    const userIds = Array.from(new Set(rows.map(r => r.uploaded_by).filter(Boolean)));
-    let usersMap = new Map();
-    if (userIds.length){
-      const { rows: users } = await pool.query(`SELECT id,email,full_name FROM users WHERE id = ANY($1)`, [userIds]);
-      usersMap = new Map(users.map(u=>[u.id,u]));
-    }
-    const items = rows.map(it => ({
-      ...it,
-      uploaded_by_user: it.uploaded_by ? (usersMap.get(it.uploaded_by) || null) : null
-    }));
+
+    const items = await listDetailed(t, req, 'created_at DESC', { whereSql, params, limit, offset });
+
     res.json({ items, page, pageSize, total: tot[0]?.c || 0 });
   } catch (e) {
     next(e);

@@ -20,7 +20,25 @@ const FK_MAP = {
   severity_id: { table: 'severities', key: 'severity', defaults: ['id','name','code'], allowed: ['id','name','code','sort'] },
   source_id: { table: 'sources', key: 'source', defaults: ['id','name','code'], allowed: ['id','name','code'] },
   group_id: { table: 'agent_groups', key: 'group', defaults: ['id','name'], allowed: ['id','name','description'] },
-  tier_id: { table: 'agent_tiers', key: 'tier', defaults: ['id','name'], allowed: ['id','name','level'] }
+  tier_id: { table: 'agent_tiers', key: 'tier', defaults: ['id','name'], allowed: ['id','name','level'] },
+
+  // Knowledge base and FAQs relations
+  faq_id: { table: 'faqs', key: 'faq', defaults: ['id','title'], allowed: ['id','title','is_published','created_at'] },
+  ticket_id: { table: 'tickets', key: 'ticket', defaults: ['id','title'], allowed: ['id','title','status_id','priority_id','created_at'] },
+  article_id: { table: 'kb_articles', key: 'article', defaults: ['id','title'], allowed: ['id','title','is_published','created_at'] },
+  tag_id: { table: 'kb_tags', key: 'tag', defaults: ['id','name'], allowed: ['id','name'] },
+
+  // Inbox
+  created_ticket_id: { table: 'tickets', key: 'created_ticket', defaults: ['id','title'], allowed: ['id','title'] },
+
+  // Videos
+  system_category_id: { table: 'system_category', key: 'system_category', defaults: ['id','name'], allowed: ['id','name'] },
+};
+
+// Table-specific FK overrides. These take precedence over generic FK_MAP.
+// Use the format `${table}.${column}` as the key.
+const SPECIFIC_FK_MAP = {
+  'videos.category_id': { table: 'video_categories', key: 'category', defaults: ['id','name'], allowed: ['id','name'] },
 };
 
 function parseAttrs(req, qKey, allowed){
@@ -60,7 +78,7 @@ function parseBracketSelect(raw) {
   let s = String(raw).trim();
   // Accept optional top-level entity prefix like users[...]
   // Strip leading identifier and optional '=' e.g., users[...]
-  const m = s.match(/^[a-zA-Z0-9_.-]+\s*\[(.*)\]\s*$/);
+  const m = s.match(/^[a-zA-Z0-9_.-]+\s*\[(.*)]\s*$/);
   if (m) s = m[1];
   // Also allow wrapping braces: { ... }
   s = s.replace(/^{\s*/, '').replace(/\s*}$/, '');
@@ -215,20 +233,88 @@ async function expandUsersRows(rows, expandTree){
   return rows;
 }
 
-export async function listDetailed(table, req, order = '1 DESC', options = {}){
-  // find which FK columns exist for this table per FK_MAP
-  const cols = Object.keys(FK_MAP);
-  const { rows: presentCols } = await pool.query(
-    `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name = ANY($2)`,
-    [table, cols]
+// New function to expand roles and their permissions
+async function expandRolesRows(rows, expandTree){
+  if (!rows || !rows.length) return rows;
+  const wantPerms = !!expandTree?.permissions;
+  if (!wantPerms) return rows;
+  const roleIds = rows.map(r => r.id).filter(Boolean);
+  if (!roleIds.length) return rows;
+  const permQ = await pool.query(
+    `SELECT rp.role_id, p.*
+     FROM role_permissions rp
+     JOIN permissions p ON p.id = rp.permission_id
+     WHERE rp.role_id = ANY($1::uuid[])`,
+    [roleIds]
   );
-  const presentSet = new Set((presentCols||[]).map(r=>r.column_name));
-  const relations = [];
-  for (const c of cols){
-    if (presentSet.has(c)){
-      relations.push({ col: c, ...FK_MAP[c] });
+  const permsByRole = new Map();
+  for (const pr of permQ.rows){
+    const rid = pr.role_id;
+    const perm = { ...pr };
+    delete perm.role_id;
+    if (!permsByRole.has(rid)) permsByRole.set(rid, []);
+    permsByRole.get(rid).push(perm);
+  }
+  for (const r of rows){
+    r.permissions = permsByRole.get(r.id) || [];
+  }
+  return rows;
+}
+
+// Expand nested user relations within arbitrary rows, for keys derived from FK_MAP that point to users
+async function expandNestedUserRelations(rows, expandTree){
+  if (!rows || !rows.length) return rows;
+  if (!expandTree || !Object.keys(expandTree).length) return rows;
+  // Discover relation keys that are user objects at this level
+  const userKeys = Object.values(FK_MAP).filter(v => v.table === 'users').map(v => v.key);
+  for (const key of userKeys){
+    const subtree = expandTree[key];
+    if (!subtree) continue;
+    // collect user objects present under this key
+    const users = [];
+    for (const row of rows){
+      const u = row?.[key];
+      if (u && typeof u === 'object' && u.id) users.push(u);
+    }
+    if (users.length){
+      // Expand roles/permissions on these nested users as requested
+      // eslint-disable-next-line no-await-in-loop
+      await expandUsersRows(users, subtree);
     }
   }
+  return rows;
+}
+
+function resolveFkFor(table, column){
+  const specific = SPECIFIC_FK_MAP[`${table}.${column}`];
+  if (specific) return specific;
+  return FK_MAP[column] || null;
+}
+
+async function getPresentColumns(table){
+  const { rows } = await pool.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1`,
+    [table]
+  );
+  return new Set((rows||[]).map(r=>r.column_name));
+}
+
+export async function listDetailed(table, req, order = '1 DESC', options = {}){
+  // discover FK relations for this table, including specific overrides
+  const presentSet = await getPresentColumns(table);
+  const candidateCols = new Set([
+    ...Object.keys(FK_MAP),
+    ...Object.keys(SPECIFIC_FK_MAP)
+      .filter(k => k.startsWith(`${table}.`))
+      .map(k => k.split('.').slice(-1)[0])
+  ]);
+  const relations = [];
+  for (const c of presentSet){
+    if (!candidateCols.has(c)) continue;
+    const cfg = resolveFkFor(table, c);
+    if (cfg) relations.push({ col: c, ...cfg });
+  }
+
   // check which target tables exist
   const targetTables = Array.from(new Set(relations.map(r=>r.table)));
   const presentTargets = await tablesExist(targetTables);
@@ -286,22 +372,32 @@ export async function listDetailed(table, req, order = '1 DESC', options = {}){
   // Nested expansion layer (e.g., users -> roles -> permissions)
   const { expand: expandTree, fields } = getExpandAndFields(req);
   let outRows = rows;
-  if (table === 'users' && expandTree && Object.keys(expandTree).length){
-    outRows = await expandUsersRows(rows, expandTree);
+  if (expandTree && Object.keys(expandTree).length){
+    if (table === 'users') {
+      outRows = await expandUsersRows(rows, expandTree);
+    } else if (table === 'roles') {
+      outRows = await expandRolesRows(rows, expandTree);
+    }
+    // Also support nested user expansions on any table
+    outRows = await expandNestedUserRelations(outRows, expandTree);
   }
   return fields ? outRows.map(r => pickFieldsDeep(r, fields)) : outRows;
 }
 
 export async function readDetailed(table, idCol, id, req){
-  const cols = Object.keys(FK_MAP);
-  const { rows: presentCols } = await pool.query(
-    `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name = ANY($2)`,
-    [table, cols]
-  );
-  const presentSet = new Set((presentCols||[]).map(r=>r.column_name));
+  // discover FK relations for this table, including specific overrides
+  const presentSet = await getPresentColumns(table);
+  const candidateCols = new Set([
+    ...Object.keys(FK_MAP),
+    ...Object.keys(SPECIFIC_FK_MAP)
+      .filter(k => k.startsWith(`${table}.`))
+      .map(k => k.split('.').slice(-1)[0])
+  ]);
   const relations = [];
-  for (const c of cols){
-    if (presentSet.has(c)) relations.push({ col: c, ...FK_MAP[c] });
+  for (const c of presentSet){
+    if (!candidateCols.has(c)) continue;
+    const cfg = resolveFkFor(table, c);
+    if (cfg) relations.push({ col: c, ...cfg });
   }
   const targetTables = Array.from(new Set(relations.map(r=>r.table)));
   const presentTargets = await tablesExist(targetTables);
@@ -332,9 +428,16 @@ export async function readDetailed(table, idCol, id, req){
   if (!row) return row;
 
   const { expand: expandTree, fields } = getExpandAndFields(req);
-  if (table === 'users' && expandTree && Object.keys(expandTree).length){
-    const r = await expandUsersRows([row], expandTree);
-    row = r[0];
+  if (expandTree && Object.keys(expandTree).length){
+    if (table === 'users') {
+      const r = await expandUsersRows([row], expandTree);
+      row = r[0];
+    } else if (table === 'roles') {
+      const r = await expandRolesRows([row], expandTree);
+      row = r[0];
+    }
+    // Expand nested user relations inside this row
+    await expandNestedUserRelations([row], expandTree);
   }
   return fields ? pickFieldsDeep(row, fields) : row;
 }

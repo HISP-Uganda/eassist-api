@@ -2,6 +2,7 @@ import { Router } from "express";
 import { create, update, remove, read } from "../../../utils/crud.js";
 import pool from "../../../db/pool.js";
 import { parsePagination } from "../../../utils/pagination.js";
+import { listDetailed } from "../../../utils/relations.js";
 const r = Router();
 const table = "inbox_emails";
 
@@ -41,13 +42,10 @@ r.get("/emails", async (req, res, next) => {
       `SELECT count(*)::int c FROM ${table} ${whereSql}`,
       params
     );
-    const { rows } = await pool.query(
-      `SELECT * FROM ${table} ${whereSql} ORDER BY created_at DESC LIMIT $${
-        params.length + 1
-      } OFFSET $${params.length + 2}`,
-      [...params, limit, offset]
-    );
-    res.json({ items: rows, page, pageSize, total: tot[0]?.c || 0 });
+
+    const items = await listDetailed(table, req, 'created_at DESC', { whereSql, params, limit, offset });
+
+    res.json({ items, page, pageSize, total: tot[0]?.c || 0 });
   } catch (e) {
     next(e);
   }

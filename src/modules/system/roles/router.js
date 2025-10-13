@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { create, update, remove, read } from "../../../utils/crud.js";
-import { readDetailed } from "../../../utils/relations.js";
+import { listDetailed, readDetailed } from "../../../utils/relations.js";
 import pool from "../../../db/pool.js";
 import { parsePagination } from "../../../utils/pagination.js";
 import {
@@ -46,14 +46,14 @@ r.get(
         params
       );
 
-      const { rows } = await pool.query(
-        `SELECT * FROM ${t} ${whereSql}
-         ORDER BY created_at DESC
-         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-        [...params, limit, offset]
-      );
+      const items = await listDetailed(t, req, 'created_at DESC', {
+        whereSql,
+        params,
+        limit,
+        offset,
+      });
 
-      res.json({ items: rows, page, pageSize, total: tot[0]?.c || 0 });
+      res.json({ items, page, pageSize, total: tot[0]?.c || 0 });
     } catch (e) {
       next(e);
     }

@@ -3,6 +3,7 @@ import pool from "../../../db/pool.js";
 import { parsePagination } from "../../../utils/pagination.js";
 import { NotFound, BadRequest } from "../../../utils/errors.js";
 import { pickFields } from "../../../utils/crud.js";
+import { listDetailed } from "../../../utils/relations.js";
 const r = Router();
 const t = "kb_tags";
 
@@ -20,13 +21,10 @@ r.get("/", async (req, res, next) => {
       `SELECT count(*)::int c FROM ${t} ${whereSql}`,
       params
     );
-    const { rows } = await pool.query(
-      `SELECT * FROM ${t} ${whereSql} ORDER BY name ASC LIMIT $${
-        params.length + 1
-      } OFFSET $${params.length + 2}`,
-      [...params, limit, offset]
-    );
-    res.json({ items: rows, page, pageSize, total: tot[0]?.c || 0 });
+
+    const items = await listDetailed(t, req, 'name ASC', { whereSql, params, limit, offset });
+
+    res.json({ items, page, pageSize, total: tot[0]?.c || 0 });
   } catch (e) {
     next(e);
   }
