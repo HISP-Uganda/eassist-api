@@ -17808,7 +17808,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TicketList"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TicketNote"
+                  }
                 },
                 "examples": {
                   "bearerCurl": {
@@ -18056,7 +18059,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TicketList"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TicketNote"
+                  }
                 },
                 "examples": {
                   "bearerCurl": {
@@ -18332,7 +18338,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketNote"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -18467,10 +18473,10 @@
                       "ok": false,
                       "error": {
                         "code": "NOT_FOUND",
-                        "message": "Ticket not found"
+                        "message": "Note not found"
                       },
                       "details": {
-                        "id": "123"
+                        "id": "n1"
                       },
                       "request_id": "REQ-abc123",
                       "path": "/api/tickets/notes/{id}",
@@ -18520,8 +18526,8 @@
         "tags": [
           "tickets/notes"
         ],
-        "summary": "PUT /api/tickets/notes/:id",
-        "description": "Update an existing note.",
+        "summary": "Update note",
+        "description": "Update a ticket note by ID.",
         "security": [
           {
             "bearerAuth": []
@@ -18553,7 +18559,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketNote"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -18688,10 +18694,10 @@
                       "ok": false,
                       "error": {
                         "code": "NOT_FOUND",
-                        "message": "Ticket not found"
+                        "message": "Note not found"
                       },
                       "details": {
-                        "id": "123"
+                        "id": "n1"
                       },
                       "request_id": "REQ-abc123",
                       "path": "/api/tickets/notes/{id}",
@@ -18748,8 +18754,8 @@
         "tags": [
           "tickets/notes"
         ],
-        "summary": "DELETE /api/tickets/notes/:id",
-        "description": "Delete a note.",
+        "summary": "Delete note",
+        "description": "Delete a ticket note by ID.",
         "security": [
           {
             "bearerAuth": []
@@ -18781,7 +18787,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketNote"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -18916,10 +18922,10 @@
                       "ok": false,
                       "error": {
                         "code": "NOT_FOUND",
-                        "message": "Ticket not found"
+                        "message": "Note not found"
                       },
                       "details": {
-                        "id": "123"
+                        "id": "n1"
                       },
                       "request_id": "REQ-abc123",
                       "path": "/api/tickets/notes/{id}",
@@ -19062,7 +19068,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TicketList"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TicketAttachment"
+                  }
                 },
                 "examples": {
                   "bearerCurl": {
@@ -19310,7 +19319,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TicketList"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TicketAttachment"
+                  }
                 },
                 "examples": {
                   "bearerCurl": {
@@ -19586,7 +19598,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketAttachment"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -19774,8 +19786,8 @@
         "tags": [
           "tickets/attachments"
         ],
-        "summary": "PUT /api/tickets/attachments/:id",
-        "description": "Update an existing attachment.",
+        "summary": "Update attachment",
+        "description": "Update a ticket attachment by ID.",
         "security": [
           {
             "bearerAuth": []
@@ -19807,7 +19819,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketAttachment"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -20002,8 +20014,8 @@
         "tags": [
           "tickets/attachments"
         ],
-        "summary": "DELETE /api/tickets/attachments/:id",
-        "description": "Delete a attachment.",
+        "summary": "Delete attachment",
+        "description": "Delete a ticket attachment by ID.",
         "security": [
           {
             "bearerAuth": []
@@ -20035,7 +20047,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketAttachment"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -20314,7 +20326,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TicketList"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TicketWatcher"
+                  }
                 },
                 "examples": {
                   "bearerCurl": {
@@ -20562,7 +20577,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TicketList"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TicketWatcher"
+                  }
                 },
                 "examples": {
                   "bearerCurl": {
@@ -20784,11 +20802,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "additionalProperties": true
-              },
-              "example": {
-                "sample": "value"
+                "$ref": "#/components/schemas/TicketWatcher"
               }
             }
           }
@@ -20833,7 +20847,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TicketList"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TicketWatcher"
+                  }
                 },
                 "examples": {
                   "bearerCurl": {
@@ -21055,11 +21072,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "additionalProperties": true
-              },
-              "example": {
-                "sample": "value"
+                "$ref": "#/components/schemas/TicketWatcher"
               }
             }
           }
@@ -21113,7 +21126,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketWatcher"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -21248,10 +21261,10 @@
                       "ok": false,
                       "error": {
                         "code": "NOT_FOUND",
-                        "message": "Ticket not found"
+                        "message": "Watcher not found"
                       },
                       "details": {
-                        "id": "123"
+                        "id": "w1"
                       },
                       "request_id": "REQ-abc123",
                       "path": "/api/tickets/watchers/{id}",
@@ -21301,8 +21314,8 @@
         "tags": [
           "tickets/watchers"
         ],
-        "summary": "PUT /api/tickets/watchers/:id",
-        "description": "Update an existing watcher.",
+        "summary": "Update watcher",
+        "description": "Update a ticket watcher by ID.",
         "security": [
           {
             "bearerAuth": []
@@ -21334,7 +21347,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketWatcher"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -21469,10 +21482,10 @@
                       "ok": false,
                       "error": {
                         "code": "NOT_FOUND",
-                        "message": "Ticket not found"
+                        "message": "Watcher not found"
                       },
                       "details": {
-                        "id": "123"
+                        "id": "w1"
                       },
                       "request_id": "REQ-abc123",
                       "path": "/api/tickets/watchers/{id}",
@@ -21519,11 +21532,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "additionalProperties": true
-              },
-              "example": {
-                "sample": "value"
+                "$ref": "#/components/schemas/TicketWatcher"
               }
             }
           }
@@ -21533,8 +21542,8 @@
         "tags": [
           "tickets/watchers"
         ],
-        "summary": "DELETE /api/tickets/watchers/:id",
-        "description": "Delete a watcher.",
+        "summary": "Remove watcher",
+        "description": "Remove a ticket watcher by ID.",
         "security": [
           {
             "bearerAuth": []
@@ -21566,7 +21575,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketWatcher"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -21701,10 +21710,10 @@
                       "ok": false,
                       "error": {
                         "code": "NOT_FOUND",
-                        "message": "Ticket not found"
+                        "message": "Watcher not found"
                       },
                       "details": {
-                        "id": "123"
+                        "id": "w1"
                       },
                       "request_id": "REQ-abc123",
                       "path": "/api/tickets/watchers/{id}",
@@ -26197,7 +26206,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketNote"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -26418,7 +26427,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketNote"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -26683,7 +26692,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketWatcher"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -26904,7 +26913,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketWatcher"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -27089,34 +27098,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "user_id": {
-                    "type": "string",
-                    "nullable": true
-                  },
-                  "email": {
-                    "type": "string",
-                    "format": "email",
-                    "nullable": true
-                  },
-                  "notify": {
-                    "type": "boolean",
-                    "default": true
-                  }
-                },
-                "anyOf": [
-                  {
-                    "required": [
-                      "user_id"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "email"
-                    ]
-                  }
-                ]
+                "$ref": "#/components/schemas/TicketWatcher"
               }
             }
           }
@@ -27170,7 +27152,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketWatcher"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -27353,6 +27335,243 @@
         "requestBody": {
           "required": false
         }
+      },
+      "put": {
+        "tags": [
+          "tickets/:id"
+        ],
+        "summary": "PUT /api/tickets/:id/watchers/:wid",
+        "description": "Update an existing watcher.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          },
+          {
+            "name": "wid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: wid"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketWatcher"
+                },
+                "examples": {
+                  "bearerCurl": {
+                    "value": "curl -s -X PUT 'http://localhost:8080/api/tickets/:id/watchers/:wid' -H 'Authorization: Bearer $ACCESS_TOKEN' -H 'Content-Type: application/json' -d '{}'"
+                  },
+                  "apiKeyCurl": {
+                    "value": "curl -s -X PUT 'http://localhost:8080/api/tickets/:id/watchers/:wid' -H 'X-API-Key: $API_KEY' -H 'Content-Type: application/json' -d '{}'"
+                  },
+                  "basicCurl": {
+                    "value": "curl -s -X PUT 'http://localhost:8080/api/tickets/:id/watchers/:wid' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "notFound": {
+                    "value": {
+                      "ok": false,
+                      "error": {
+                        "code": "NOT_FOUND",
+                        "message": "Ticket not found"
+                      },
+                      "details": {
+                        "id": "123"
+                      },
+                      "request_id": "REQ-abc123",
+                      "path": "/api/tickets/{id}/watchers/{wid}",
+                      "method": "PUT",
+                      "timestamp": "2025-09-23T12:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketWatcher"
+              }
+            }
+          }
+        }
       }
     },
     "/api/tickets/{id}/attachments": {
@@ -27434,7 +27653,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketAttachment"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -27655,7 +27874,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketAttachment"
                 },
                 "examples": {
                   "bearerCurl": {
@@ -28566,6 +28785,944 @@
               }
             }
           }
+        }
+      }
+    },
+    "/api/tickets/{id}/notes/{nid}": {
+      "put": {
+        "tags": [
+          "tickets/:id"
+        ],
+        "summary": "PUT /api/tickets/:id/notes/:nid",
+        "description": "Update an existing note.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          },
+          {
+            "name": "nid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: nid"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketNote"
+                },
+                "examples": {
+                  "bearerCurl": {
+                    "value": "curl -s -X PUT 'http://localhost:8080/api/tickets/:id/notes/:nid' -H 'Authorization: Bearer $ACCESS_TOKEN' -H 'Content-Type: application/json' -d '{}'"
+                  },
+                  "apiKeyCurl": {
+                    "value": "curl -s -X PUT 'http://localhost:8080/api/tickets/:id/notes/:nid' -H 'X-API-Key: $API_KEY' -H 'Content-Type: application/json' -d '{}'"
+                  },
+                  "basicCurl": {
+                    "value": "curl -s -X PUT 'http://localhost:8080/api/tickets/:id/notes/:nid' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "notFound": {
+                    "value": {
+                      "ok": false,
+                      "error": {
+                        "code": "NOT_FOUND",
+                        "message": "Ticket not found"
+                      },
+                      "details": {
+                        "id": "123"
+                      },
+                      "request_id": "REQ-abc123",
+                      "path": "/api/tickets/{id}/notes/{nid}",
+                      "method": "PUT",
+                      "timestamp": "2025-09-23T12:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketNote"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "tickets/:id"
+        ],
+        "summary": "DELETE /api/tickets/:id/notes/:nid",
+        "description": "Delete a note.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          },
+          {
+            "name": "nid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: nid"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketNote"
+                },
+                "examples": {
+                  "bearerCurl": {
+                    "value": "curl -s -X DELETE 'http://localhost:8080/api/tickets/:id/notes/:nid' -H 'Authorization: Bearer $ACCESS_TOKEN'"
+                  },
+                  "apiKeyCurl": {
+                    "value": "curl -s -X DELETE 'http://localhost:8080/api/tickets/:id/notes/:nid' -H 'X-API-Key: $API_KEY'"
+                  },
+                  "basicCurl": {
+                    "value": "curl -s -X DELETE 'http://localhost:8080/api/tickets/:id/notes/:nid' -u 'user@example.com:password'"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "notFound": {
+                    "value": {
+                      "ok": false,
+                      "error": {
+                        "code": "NOT_FOUND",
+                        "message": "Ticket not found"
+                      },
+                      "details": {
+                        "id": "123"
+                      },
+                      "request_id": "REQ-abc123",
+                      "path": "/api/tickets/{id}/notes/{nid}",
+                      "method": "DELETE",
+                      "timestamp": "2025-09-23T12:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": false
+        }
+      }
+    },
+    "/api/tickets/{id}/attachments/{aid}": {
+      "put": {
+        "tags": [
+          "tickets/:id"
+        ],
+        "summary": "PUT /api/tickets/:id/attachments/:aid",
+        "description": "Update an existing attachment.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          },
+          {
+            "name": "aid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: aid"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketAttachment"
+                },
+                "examples": {
+                  "bearerCurl": {
+                    "value": "curl -s -X PUT 'http://localhost:8080/api/tickets/:id/attachments/:aid' -H 'Authorization: Bearer $ACCESS_TOKEN' -H 'Content-Type: application/json' -d '{}'"
+                  },
+                  "apiKeyCurl": {
+                    "value": "curl -s -X PUT 'http://localhost:8080/api/tickets/:id/attachments/:aid' -H 'X-API-Key: $API_KEY' -H 'Content-Type: application/json' -d '{}'"
+                  },
+                  "basicCurl": {
+                    "value": "curl -s -X PUT 'http://localhost:8080/api/tickets/:id/attachments/:aid' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "notFound": {
+                    "value": {
+                      "ok": false,
+                      "error": {
+                        "code": "NOT_FOUND",
+                        "message": "Ticket not found"
+                      },
+                      "details": {
+                        "id": "123"
+                      },
+                      "request_id": "REQ-abc123",
+                      "path": "/api/tickets/{id}/attachments/{aid}",
+                      "method": "PUT",
+                      "timestamp": "2025-09-23T12:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketAttachment"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "tickets/:id"
+        ],
+        "summary": "DELETE /api/tickets/:id/attachments/:aid",
+        "description": "Delete a attachment.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          },
+          {
+            "name": "aid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: aid"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketAttachment"
+                },
+                "examples": {
+                  "bearerCurl": {
+                    "value": "curl -s -X DELETE 'http://localhost:8080/api/tickets/:id/attachments/:aid' -H 'Authorization: Bearer $ACCESS_TOKEN'"
+                  },
+                  "apiKeyCurl": {
+                    "value": "curl -s -X DELETE 'http://localhost:8080/api/tickets/:id/attachments/:aid' -H 'X-API-Key: $API_KEY'"
+                  },
+                  "basicCurl": {
+                    "value": "curl -s -X DELETE 'http://localhost:8080/api/tickets/:id/attachments/:aid' -u 'user@example.com:password'"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "notFound": {
+                    "value": {
+                      "ok": false,
+                      "error": {
+                        "code": "NOT_FOUND",
+                        "message": "Ticket not found"
+                      },
+                      "details": {
+                        "id": "123"
+                      },
+                      "request_id": "REQ-abc123",
+                      "path": "/api/tickets/{id}/attachments/{aid}",
+                      "method": "DELETE",
+                      "timestamp": "2025-09-23T12:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponseBase"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "resource id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": false
         }
       }
     },

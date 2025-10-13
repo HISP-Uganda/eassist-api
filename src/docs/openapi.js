@@ -266,6 +266,35 @@ const OVERRIDES = {
     { name: "notify", in: "query", schema: { type: "string", enum: ["true","false"] } }
   ] , description: "List ticket watchers across system.", summary: "List ticket watchers" } },
 
+  // New: ID endpoints for notes/attachments/watchers with PUT/DELETE specifics
+  "/api/tickets/notes/:id": {
+    put: {
+      summary: "Update note",
+      description: "Update a ticket note by ID.",
+      requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/TicketNote" } } } }
+    },
+    delete: {
+      summary: "Delete note",
+      description: "Delete a ticket note by ID."
+    }
+  },
+  "/api/tickets/attachments/:id": {
+    put: {
+      summary: "Update attachment",
+      description: "Update a ticket attachment by ID.",
+      requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/TicketAttachment" } } } }
+    },
+    delete: { summary: "Delete attachment", description: "Delete a ticket attachment by ID." }
+  },
+  "/api/tickets/watchers/:id": {
+    put: {
+      summary: "Update watcher",
+      description: "Update a ticket watcher by ID.",
+      requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/TicketWatcher" } } } }
+    },
+    delete: { summary: "Remove watcher", description: "Remove a ticket watcher by ID." }
+  },
+
   // Public endpoints filters and payloads
   "/api/public/faqs": { get: { parameters: [
     { name: "page", in: "query", schema: { type: "integer" } },
@@ -432,6 +461,17 @@ function errorExamples(path, method) {
       notFound: base("NOT_FOUND", "Attachment not found", {
         details: { id: "a1" },
       }),
+    };
+  }
+  // New: specific not founds for notes and watchers
+  if (path.startsWith("/api/tickets/notes") && path.match(/\{id}/)) {
+    return {
+      notFound: base("NOT_FOUND", "Note not found", { details: { id: "n1" } }),
+    };
+  }
+  if (path.startsWith("/api/tickets/watchers") && path.match(/\{id}/)) {
+    return {
+      notFound: base("NOT_FOUND", "Watcher not found", { details: { id: "w1" } }),
     };
   }
   if (path.startsWith("/api/tickets") && path.match(/\{id}/)) {
@@ -734,8 +774,10 @@ export default function buildOpenApi(app) {
   function guessResponseSchema(path, _method) {
     // Prefer specific resources when the path contains a resource id
     if (path.includes('{id}')) {
-      if (path.includes('/tickets')) return { $ref: '#/components/schemas/Ticket' };
-      if (path.includes('/attachments') || path.includes('/tickets/attachments')) return { $ref: '#/components/schemas/TicketAttachment' };
+      // Specific sub-resources first
+      if (path.includes('/tickets/attachments') || path.includes('/attachments')) return { $ref: '#/components/schemas/TicketAttachment' };
+      if (path.includes('/tickets/notes') || path.includes('/notes')) return { $ref: '#/components/schemas/TicketNote' };
+      if (path.includes('/tickets/watchers') || path.includes('/watchers')) return { $ref: '#/components/schemas/TicketWatcher' };
       if (path.includes('/kb') || path.includes('/kb-articles')) return { $ref: '#/components/schemas/KBArticle' };
       if (path.includes('/faqs')) return { $ref: '#/components/schemas/FAQ' };
       if (path.includes('/videos')) return { $ref: '#/components/schemas/Video' };
@@ -749,8 +791,12 @@ export default function buildOpenApi(app) {
       if (path.includes('/agents/groups')) return { $ref: '#/components/schemas/AgentGroup' };
       if (path.includes('/agents/tiers')) return { $ref: '#/components/schemas/AgentTier' };
       if (path.includes('/workflows')) return { $ref: '#/components/schemas/WorkflowRule' };
+      if (path.includes('/tickets')) return { $ref: '#/components/schemas/Ticket' };
     }
-    // Collection endpoints
+    // Collection endpoints (order: specific sub-resources before generic /tickets)
+    if (path.includes('/tickets/attachments') || path.includes('/attachments')) return { type: 'array', items: { $ref: '#/components/schemas/TicketAttachment' } };
+    if (path.includes('/tickets/notes') || path.includes('/notes')) return { type: 'array', items: { $ref: '#/components/schemas/TicketNote' } };
+    if (path.includes('/tickets/watchers') || path.includes('/watchers')) return { type: 'array', items: { $ref: '#/components/schemas/TicketWatcher' } };
     if (path.includes('/tickets')) return { $ref: '#/components/schemas/TicketList' };
     if (path.includes('/kb') || path.includes('/kb-articles')) return { type: 'array', items: { $ref: '#/components/schemas/KBArticle' } };
     if (path.includes('/faqs')) return { type: 'array', items: { $ref: '#/components/schemas/FAQ' } };
@@ -973,12 +1019,15 @@ export default function buildOpenApi(app) {
         else if (e.path.includes('/settings')) {
           op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/SettingKV' } } } };
         }
-        // Attachments, notes, events
+        // Attachments, notes, events, watchers
         else if (e.path.includes('/tickets/attachments') || e.path.includes('/attachments')) {
           op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/TicketAttachment' } } } };
         }
         else if (e.path.includes('/tickets/notes') || e.path.includes('/notes')) {
           op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/TicketNote' } } } };
+        }
+        else if (e.path.includes('/tickets/watchers') || e.path.includes('/watchers')) {
+          op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/TicketWatcher' } } } };
         }
         else if (e.path.includes('/tickets/events') || e.path.includes('/events')) {
           op.requestBody = { required: true, content: { 'application/json': { schema: { type: 'object', additionalProperties: true } } } };
