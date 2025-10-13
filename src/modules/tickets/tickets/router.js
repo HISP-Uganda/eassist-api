@@ -153,8 +153,40 @@ r.post(
   requireAnyPermission(PERMISSIONS.TICKETS_CREATE, PERMISSIONS.TICKETS_MANAGE),
   async (req, res, next) => {
     try {
-      res.status(201).json(await create(table, req.body, allow));
+      const body = req.body || {};
+      // Basic required fields
+      if (!body.title || !String(body.title).trim()) {
+        return next(BadRequest('title is required'));
+      }
+      // Normalize aliases from common client payloads
+      if (body.email && !body.reporter_email) body.reporter_email = body.email;
+      if (body.name && !body.full_name) body.full_name = body.name;
+      if (body.phone && !body.phone_number) body.phone_number = body.phone;
+      if (body.phoneNumber && !body.phone_number) body.phone_number = body.phoneNumber;
+
+      // Coerce integer FKs commonly sent as strings
+      const intFields = [
+        'system_id','module_id','category_id','status_id','priority_id','severity_id','source_id','group_id','tier_id'
+      ];
+      for (const f of intFields) {
+        if (Object.prototype.hasOwnProperty.call(body, f)) {
+          const v = body[f];
+          if (v === '' || v === null) { body[f] = null; continue; }
+          const n = Number(v);
+          if (Number.isFinite(n)) body[f] = Math.trunc(n);
+        }
+      }
+      // Remove unsupported field system_category_id (belongs to other tables)
+      if (Object.prototype.hasOwnProperty.call(body, 'system_category_id')) delete body.system_category_id;
+
+      // Proceed with generic creator using the allow list
+      const created = await create(table, body, allow);
+      res.status(201).json(created);
     } catch (e) {
+      // Translate FK violations into 400 for a clearer client message
+      if (e && e.code === '23503') {
+        return next(BadRequest('Invalid foreign key value', { detail: e.detail }));
+      }
       next(e);
     }
   }
