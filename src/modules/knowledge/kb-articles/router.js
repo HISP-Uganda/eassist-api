@@ -18,6 +18,11 @@ r.get("/", async (req, res, next) => {
         `(lower(title) LIKE $${params.length} OR lower(body) LIKE $${params.length})`
       );
     }
+        if (req.query.is_published != null) {
+      const v = String(req.query.is_published).toLowerCase() === "true";
+      params.push(v);
+      where.push(`is_published=$${params.length}`);
+    }
     const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
     const { rows: tot } = await pool.query(
       `SELECT count(*)::int c FROM ${t} ${whereSql}`,

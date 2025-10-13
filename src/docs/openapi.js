@@ -66,6 +66,14 @@ function isNoAuthPath(path, method = 'get') {
   if (path === "/api/docs.json" || path.startsWith("/api/docs")) return true;
   // Lookups: only GET are public; writes require auth
   if (path.startsWith("/api/system/lookups")) return m === 'get';
+  // Knowledge: make FAQs, KB Articles, and Videos GET public
+  if (
+    m === 'get' && (
+      path === '/api/knowledge/faqs' || path.startsWith('/api/knowledge/faqs/') ||
+      path === '/api/knowledge/kb/articles' || path.startsWith('/api/knowledge/kb/articles/') ||
+      path === '/api/knowledge/videos' || path.startsWith('/api/knowledge/videos/')
+    )
+  ) return true;
   // Auth routes: explicitly list public ones; others require auth
   if (
     path === "/api/auth/login" ||
@@ -139,6 +147,69 @@ function mergeParams(base = [], override = []) {
 
 // Manual overrides per path+method (add/merge params, requestBody)
 const OVERRIDES = {
+  // Knowledge public GET filters and POST bodies aligned with DB
+  "/api/knowledge/faqs": {
+    get: {
+      summary: "List FAQs",
+      description: "List FAQs with pagination and optional search/filter.",
+      parameters: [
+        { name: "system_category_id", in: "query", schema: { type: "integer" }, description: "Filter by system category id" },
+        { name: "is_published", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Filter by publication state" },
+      ],
+    },
+    post: {
+      summary: "Create FAQ",
+      description: "Create a new FAQ.",
+      requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/FAQ' }, example: { title: 'How to reset password?', body: 'Use the reset link…', is_published: true, system_category_id: 1 } } } },
+      responses: { '201': { description: 'Created', content: { 'application/json': { schema: { $ref: '#/components/schemas/FAQ' } } } } }
+    }
+  },
+  "/api/knowledge/faqs/{id}": {
+    get: { summary: "Get FAQ", description: "Get FAQ by id." },
+    put: { summary: "Update FAQ", description: "Update FAQ by id.", requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/FAQ' } } } } }
+  },
+  "/api/knowledge/kb/articles": {
+    get: {
+      summary: "List KB articles",
+      description: "List knowledge base articles with pagination and search.",
+      parameters: [
+        { name: "is_published", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Filter by publication state" }
+      ]
+    },
+    post: {
+      summary: "Create KB article",
+      description: "Create a new KB article.",
+      requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/KBArticle' }, example: { title: 'Printer troubleshooting', body: 'Steps…', is_published: true, tags: ['hardware','printer'] } } } },
+      responses: { '201': { description: 'Created', content: { 'application/json': { schema: { $ref: '#/components/schemas/KBArticle' } } } } }
+    }
+  },
+  "/api/knowledge/kb/articles/{id}": {
+    get: { summary: "Get KB article", description: "Get KB article by id." },
+    put: { summary: "Update KB article", description: "Update KB article by id.", requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/KBArticle' } } } } }
+  },
+  "/api/knowledge/videos": {
+    get: {
+      summary: "List videos",
+      description: "List videos with pagination and filters.",
+      parameters: [
+        { name: "category_id", in: "query", schema: { type: "string", format: "uuid" }, description: "Filter by video category id (UUID)" },
+        { name: "system_category_id", in: "query", schema: { type: "integer" }, description: "Filter by system category id" },
+        { name: "language", in: "query", schema: { type: "string" }, description: "Filter by language" },
+        { name: "is_published", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Filter by publication state" },
+      ],
+    },
+    post: {
+      summary: "Create video",
+      description: "Create a new video.",
+      requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Video' }, example: { title: 'How to file a ticket', url: 'https://example.com/v/1', duration_seconds: 120, language: 'en', is_published: true, system_category_id: 1 } } } },
+      responses: { '201': { description: 'Created', content: { 'application/json': { schema: { $ref: '#/components/schemas/Video' } } } } }
+    }
+  },
+  "/api/knowledge/videos/{id}": {
+    get: { summary: "Get video", description: "Get video by id." },
+    put: { summary: "Update video", description: "Update video by id.", requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Video' } } } } }
+  },
+
   // Tickets core list filters
   "/api/tickets": {
     get: {
@@ -250,7 +321,8 @@ const OVERRIDES = {
             }
           }
         }
-      }
+      },
+      responses: { '201': { description: 'Created', content: { 'application/json': { schema: { $ref: '#/components/schemas/Ticket' } } } } }
     }
   },
   // Ticket actions request bodies
@@ -846,7 +918,7 @@ export default function buildOpenApi(app) {
         type: "object",
         required: ["id", "email"],
         properties: {
-          id: { type: "string", description: "Internal user id" },
+          id: { type: "string", description: "Internal user id", format: 'uuid' },
           email: { type: "string", format: "email" },
           full_name: { type: "string" },
           is_active: { type: "boolean" },
@@ -880,13 +952,13 @@ export default function buildOpenApi(app) {
         type: "object",
         required: ["id", "name", "scope", "is_active", "prefix"],
         properties: {
-          id: { type: "string" },
+          id: { type: "string", format: 'uuid' },
           name: { type: "string" },
           scope: { type: "string" },
           is_active: { type: "boolean" },
           created_at: { type: "string", format: "date-time" },
           updated_at: { type: "string", format: "date-time", nullable: true },
-          created_by: { type: "string", nullable: true },
+          created_by: { type: "string", nullable: true, format: 'uuid' },
           expires_at: { type: "string", format: "date-time", nullable: true },
           prefix: { type: "string" },
         },
@@ -898,20 +970,20 @@ export default function buildOpenApi(app) {
         type: "object",
         required: ["id", "title"],
         properties: {
-          id: { type: "string" },
+          id: { type: "string", format: 'uuid' },
           title: { type: "string" },
           body: { type: "string" },
           is_published: { type: "boolean" },
-          created_by: { type: "string", nullable: true },
+          created_by: { type: "string", nullable: true, format: 'uuid' },
           created_at: { type: "string", format: "date-time" },
           updated_at: { type: "string", format: "date-time", nullable: true },
           tags: { type: "array", items: { type: "string" } },
         },
       },
-      FAQ: { type: "object", required: ["id", "title"], properties: { id: { type: "string" }, title: { type: "string" }, body: { type: "string" }, is_published: { type: "boolean" }, system_category_id: { type: "string", nullable: true }, created_by: { type: "string", nullable: true }, created_at: { type: "string", format: "date-time" } } },
+      FAQ: { type: "object", required: ["id", "title"], properties: { id: { type: "string", format: 'uuid' }, title: { type: "string" }, body: { type: "string" }, is_published: { type: "boolean" }, system_category_id: { type: "integer", nullable: true }, created_by: { type: "string", nullable: true, format: 'uuid' }, created_at: { type: "string", format: "date-time" } } },
 
       // Videos
-      Video: { type: "object", required: ["id", "title"], properties: { id: { type: "string" }, title: { type: "string" }, description: { type: "string" }, category_id: { type: "string" }, system_category_id: { type: "string" }, url: { type: "string", format: "uri" }, duration_seconds: { type: "integer" }, language: { type: "string" }, is_published: { type: "boolean" }, created_at: { type: "string", format: "date-time" } } },
+      Video: { type: "object", required: ["id", "title"], properties: { id: { type: "string", format: 'uuid' }, title: { type: "string" }, description: { type: "string" }, category_id: { type: "string", format: 'uuid' }, system_category_id: { type: "integer" }, url: { type: "string", format: "uri" }, duration_seconds: { type: "integer" }, language: { type: "string" }, is_published: { type: "boolean" }, created_at: { type: "string", format: "date-time" } } },
 
       // Systems / modules / categories
       SystemCategory: { type: "object", properties: { id: { type: "string" }, name: { type: "string" } } },
@@ -1082,6 +1154,15 @@ export default function buildOpenApi(app) {
               },
             },
           },
+          201: {
+            description: "Created",
+            content: {
+              "application/json": {
+                schema: { type: "object" },
+                examples: buildCurlExamples(e.path, method, isNoAuthPath(e.path, method)),
+              },
+            },
+          },
           400: {
             description: "Bad Request",
             content: { "application/json": { schema: errSchema } },
@@ -1117,6 +1198,9 @@ export default function buildOpenApi(app) {
 
       // Guess response schema for success
       op.responses[200].content["application/json"].schema = guessResponseSchema(oaPath, method);
+      if (op.responses['201']) {
+        op.responses['201'].content['application/json'].schema = guessResponseSchema(oaPath, method);
+      }
 
       // Default request bodies for POST/PUT on common resources
       if (["post", "put", "patch"].includes(method)) {
