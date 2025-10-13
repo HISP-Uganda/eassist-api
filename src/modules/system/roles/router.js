@@ -21,6 +21,26 @@ function makeRoleCode(name) {
     .replace(/^\.+|\.+$/g, "")}`;
 }
 
+function normalizePermissionCodes(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  for (const item of arr) {
+    if (!item) continue;
+    if (typeof item === "string") out.push(item.trim());
+    else if (typeof item === "object") {
+      const code = String(item.code || item.permission_code || "").trim();
+      if (code) out.push(code);
+    }
+  }
+  // unique, preserve order of first appearance
+  const seen = new Set();
+  return out.filter((c) => {
+    if (seen.has(c)) return false;
+    seen.add(c);
+    return true;
+  });
+}
+
 // List roles (paginated, searchable)
 r.get(
   "/",
@@ -60,27 +80,50 @@ r.get(
   }
 );
 
-// Create role (generate code if missing)
+// Create role (generate code if missing) + optional nested permissions
 r.post(
   "/",
   requireAnyPermission(PERMISSIONS.SYS_ROLES_CREATE, PERMISSIONS.ROLES_MANAGE),
   async (req, res, next) => {
+    const client = await pool.connect();
     try {
       const { name, description } = req.body || {};
       if (!name || !String(name).trim()) {
+        client.release();
         return next(BadRequest("name is required"));
       }
       const code = req.body.code?.trim() || makeRoleCode(name);
 
-      // use your CRUD util, but include 'code'
-      const row = await create(
-        t,
-        { code, name, description, created_at: new Date() },
-        ["code", "name", "description", "created_at"]
-      );
-      res.status(201).json(row);
+      await client.query('BEGIN');
+      // Insert role
+      const insertSql = `INSERT INTO ${t} (code, name, description, created_at) VALUES ($1,$2,$3,$4) RETURNING *`;
+      const { rows: insRows } = await client.query(insertSql, [code, name, description || null, new Date()]);
+      const role = insRows[0];
+
+      // Nested: permissions (array of codes or objects with code)
+      const permCodes = normalizePermissionCodes(req.body?.permissions);
+      if (permCodes.length) {
+        // Validate codes
+        const invalid = permCodes.filter((c) => !ALL_PERMISSIONS.includes(c));
+        if (invalid.length) {
+          throw BadRequest("Invalid permission codes", { invalid, allowed: ALL_PERMISSIONS });
+        }
+        // Bulk insert via JOIN on permissions
+        await client.query(
+          `INSERT INTO public.role_permissions (role_id, permission_id)
+           SELECT $1, p.id FROM public.permissions p WHERE p.code = ANY($2::text[])
+           ON CONFLICT DO NOTHING`,
+          [role.id, permCodes]
+        );
+      }
+
+      await client.query('COMMIT');
+      res.status(201).json(role);
     } catch (e) {
+      try { await client.query('ROLLBACK'); } catch {}
       next(e);
+    } finally {
+      client.release();
     }
   }
 );
@@ -100,19 +143,86 @@ r.get(
   }
 );
 
-// Update role (name/description; allow optional code change if provided)
+// Update role (name/description; allow optional code change if provided) + optional nested permissions reconcile
 r.put(
   "/:id",
   requireAnyPermission(PERMISSIONS.SYS_ROLES_UPDATE, PERMISSIONS.ROLES_MANAGE),
   async (req, res, next) => {
+    const client = await pool.connect();
     try {
+      await client.query('BEGIN');
       const body = { ...req.body };
       // restrict fields to those we support (updated_at handled by util)
       const fields = ["code", "name", "description"];
-      const row = await update(t, "id", req.params.id, body, fields);
-      res.json(row);
+      // Use CRUD util (non-transactional), but we want atomicity. Do the update with client directly for atomic update.
+      const setCols = fields.filter((k) => Object.prototype.hasOwnProperty.call(body, k));
+      if (!setCols.length && !Array.isArray(req.body?.permissions)) {
+        // No base fields or permissions to change; return current
+        const { rows } = await client.query(`SELECT * FROM ${t} WHERE id=$1`, [req.params.id]);
+        const cur = rows[0];
+        if (!cur) return next(NotFound('Role not found'));
+        await client.query('COMMIT');
+        return res.json(cur);
+      }
+      let updated = null;
+      if (setCols.length) {
+        const sets = setCols.map((c, i) => `"${c}"=$${i + 1}`).join(', ');
+        const args = setCols.map((c) => body[c]);
+        // also update updated_at if column exists
+        const { rows: colRows } = await client.query(`SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='updated_at' LIMIT 1`, [t]);
+        const sql = `UPDATE ${t} SET ${sets}${colRows.length ? ", updated_at=now()" : ""} WHERE id=$${args.length + 1} RETURNING *`;
+        const { rows } = await client.query(sql, [...args, req.params.id]);
+        updated = rows[0];
+        if (!updated) return next(NotFound('Role not found'));
+      } else {
+        const { rows } = await client.query(`SELECT * FROM ${t} WHERE id=$1`, [req.params.id]);
+        updated = rows[0];
+        if (!updated) return next(NotFound('Role not found'));
+      }
+
+      // Reconcile permissions if provided
+      if (Array.isArray(req.body?.permissions)) {
+        const want = normalizePermissionCodes(req.body.permissions);
+        // validate
+        const invalid = want.filter((c) => !ALL_PERMISSIONS.includes(c));
+        if (invalid.length) {
+          throw BadRequest("Invalid permission codes", { invalid, allowed: ALL_PERMISSIONS });
+        }
+        // current codes for this role
+        const { rows: curRows } = await client.query(
+          `SELECT p.code FROM public.role_permissions rp JOIN public.permissions p ON p.id = rp.permission_id WHERE rp.role_id = $1`,
+          [req.params.id]
+        );
+        const cur = new Set(curRows.map((r) => r.code));
+        const wantSet = new Set(want);
+        const toAdd = [...wantSet].filter((c) => !cur.has(c));
+        const toDel = [...cur].filter((c) => !wantSet.has(c));
+        if (toAdd.length) {
+          await client.query(
+            `INSERT INTO public.role_permissions (role_id, permission_id)
+             SELECT $1, p.id FROM public.permissions p WHERE p.code = ANY($2::text[])
+             ON CONFLICT DO NOTHING`,
+            [req.params.id, toAdd]
+          );
+        }
+        if (toDel.length) {
+          await client.query(
+            `DELETE FROM public.role_permissions
+             WHERE role_id = $1 AND permission_id IN (
+               SELECT id FROM public.permissions WHERE code = ANY($2::text[])
+             )`,
+            [req.params.id, toDel]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      res.json(updated);
     } catch (e) {
+      try { await client.query('ROLLBACK'); } catch {}
       next(e);
+    } finally {
+      client.release();
     }
   }
 );

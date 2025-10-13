@@ -138,9 +138,13 @@ const OVERRIDES = {
         { name: "system_id", in: "query", schema: { type: "string" }, description: "UUID of system" },
         { name: "module_id", in: "query", schema: { type: "string" }, description: "UUID of system module" },
         { name: "category_id", in: "query", schema: { type: "string" }, description: "UUID of issue category" },
+        { name: "status_id", in: "query", schema: { type: "string" }, description: "UUID of status" },
+        { name: "priority_id", in: "query", schema: { type: "string" }, description: "UUID of priority" },
+        { name: "severity_id", in: "query", schema: { type: "string" }, description: "UUID of severity" },
         { name: "assigned_agent_id", in: "query", schema: { type: "string" }, description: "UUID of assigned agent" },
         { name: "group_id", in: "query", schema: { type: "integer" }, description: "Support group id" },
         { name: "tier_id", in: "query", schema: { type: "integer" }, description: "Tier id" },
+        { name: "source_id", in: "query", schema: { type: "integer" }, description: "Source id" },
         { name: "unassigned", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Only tickets without assigned agent (true)" },
         { name: "reporter_email", in: "query", schema: { type: "string", format: "email" }, description: "Filter by reporter email" },
         { name: "created_from", in: "query", schema: { type: "string", format: "date-time" }, description: "Created at >= (ISO)" },
@@ -150,6 +154,92 @@ const OVERRIDES = {
       description: "List tickets with advanced filters and pagination.",
       summary: "List tickets",
     },
+    post: {
+      summary: "Create ticket (with related objects)",
+      description: "Create a ticket and optionally include related notes, attachments, and watchers in one request.",
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['title','description'],
+              properties: {
+                title: { type: 'string' },
+                description: { type: 'string' },
+                email: { type: 'string', format: 'email', description: 'Alias for reporter_email' },
+                reporter_email: { type: 'string', format: 'email' },
+                full_name: { type: 'string' },
+                phone_number: { type: 'string' },
+                reporter_user_id: { type: 'string' },
+                system_id: { type: 'string' },
+                module_id: { type: 'string' },
+                category_id: { type: 'string' },
+                priority_id: { type: 'string' },
+                severity_id: { type: 'string' },
+                status_id: { type: 'string' },
+                group_id: { type: 'integer' },
+                tier_id: { type: 'integer' },
+                source_id: { type: 'integer' },
+                source_code: { type: 'string' },
+                // Nested related objects
+                notes: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    required: ['body'],
+                    properties: {
+                      body: { type: 'string' },
+                      is_internal: { type: 'boolean' },
+                      user_id: { type: 'string', nullable: true }
+                    }
+                  },
+                  description: 'Optional notes to add to the ticket.'
+                },
+                attachments: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    required: ['file_name','file_type','file_size_bytes','storage_path'],
+                    properties: {
+                      file_name: { type: 'string' },
+                      file_type: { type: 'string' },
+                      file_size_bytes: { type: 'integer' },
+                      storage_path: { type: 'string' },
+                      uploaded_by: { type: 'string', nullable: true }
+                    }
+                  },
+                  description: 'Optional attachment records to add.'
+                },
+                watchers: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      user_id: { type: 'string', nullable: true },
+                      email: { type: 'string', format: 'email', nullable: true },
+                      notify: { type: 'boolean', default: true }
+                    },
+                    anyOf: [ { required: ['user_id'] }, { required: ['email'] } ]
+                  },
+                  description: 'Optional watchers to subscribe to updates.'
+                }
+              },
+              additionalProperties: false
+            },
+            example: {
+              title: 'Printer jam',
+              description: 'Paper jam after 3 pages',
+              reporter_email: 'user@domain.test',
+              source_code: 'agent_reporting',
+              notes: [ { body: 'Initial triage', is_internal: true } ],
+              attachments: [ { file_name: 'error.jpg', file_type: 'image/jpeg', file_size_bytes: 12345, storage_path: '/store/x/y.jpg' } ],
+              watchers: [ { email: 'watcher@domain.test' } ]
+            }
+          }
+        }
+      }
+    }
   },
   // Ticket actions request bodies
   "/api/tickets/:id/assign": {
@@ -313,55 +403,145 @@ const OVERRIDES = {
     { name: "q", in: "query", schema: { type: "string" } },
     { name: "category_id", in: "query", schema: { type: "string" }, description: "UUID" },
     { name: "system_category_id", in: "query", schema: { type: "integer" } },
-    { name: "language", in: "query", schema: { type: "string" } }
-  ] , description: "List published training videos.", summary: "List public videos" } },
-  "/api/public/videos/categories": { get: { parameters: [
-    { name: "page", in: "query", schema: { type: "integer" } },
-    { name: "pageSize", in: "query", schema: { type: "integer" } },
-    { name: "q", in: "query", schema: { type: "string" } }
-  ] , description: "List public video categories.", summary: "List public video categories" } },
-  "/api/public/search": { get: { parameters: [ { name: "q", in: "query", schema: { type: "string" } } ], description: "Unified public search across content.", summary: "Public search" } },
+  ] , description: "List public videos.", summary: "List public videos" } },
 
-  // System modules filters
-  "/api/system/files": { get: { parameters: [
-    { name: "page", in: "query", schema: { type: "integer" } },
-    { name: "pageSize", in: "query", schema: { type: "integer" } },
-    { name: "ticket_id", in: "query", schema: { type: "string" } },
-    { name: "file_type", in: "query", schema: { type: "string" } },
-    { name: "q", in: "query", schema: { type: "string" }, description: "Search file_name contains" }
-  ] , description: "List system files.", summary: "List files" } },
-  "/api/system/audit": { get: { parameters: [
-    { name: "page", in: "query", schema: { type: "integer" } },
-    { name: "pageSize", in: "query", schema: { type: "integer" } },
-    { name: "actor_user_id", in: "query", schema: { type: "string" } },
-    { name: "entity", in: "query", schema: { type: "string" } },
-    { name: "entity_id", in: "query", schema: { type: "string" } },
-    { name: "action", in: "query", schema: { type: "string" } },
-    { name: "q", in: "query", schema: { type: "string" } },
-    { name: "from", in: "query", schema: { type: "string", format: "date-time" } },
-    { name: "to", in: "query", schema: { type: "string", format: "date-time" } }
-  ] , description: "List audit events.", summary: "List audit events" } },
-  "/api/system/inbox/emails": { get: { parameters: [
-    { name: "page", in: "query", schema: { type: "integer" } },
-    { name: "pageSize", in: "query", schema: { type: "integer" } },
-    { name: "processing_status", in: "query", schema: { type: "string" } },
-    { name: "from_email", in: "query", schema: { type: "string", format: "email" } },
-    { name: "created_ticket_id", in: "query", schema: { type: "string" } },
-    { name: "from", in: "query", schema: { type: "string", format: "date-time" } },
-    { name: "to", in: "query", schema: { type: "string", format: "date-time" } },
-    { name: "q", in: "query", schema: { type: "string" } }
-  ] , description: "List inbox emails ingested by the system.", summary: "List inbox emails" } },
+  // System users: nested payloads (roles, tiers, support_groups)
   "/api/system/users": {
-    get: { parameters: [ { name: "q", in: "query", schema: { type: "string" }, description: "Search email or full_name" } ], description: "List users.", summary: "List users" },
-    post: { requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["email"], properties: { email: { type: "string", format: "email" }, full_name: { type: "string" }, password: { type: "string", description: "Plaintext; server hashes" }, phone: { type: "string" }, is_active: { type: "boolean" }, created_at: { type: "string", format: "date-time" }, roles: { type: "array", items: { oneOf: [ { type: "string" }, { type: "object", additionalProperties: true } ] }, description: "Array of role ids/codes/names" }, tiers: { type: "array", items: { oneOf: [ { type: "integer" }, { type: "object", additionalProperties: true } ] } }, support_groups: { type: "array", items: { oneOf: [ { type: "integer" }, { type: "object", additionalProperties: true } ] } } } } } } }, description: "Create a user.", summary: "Create user" }
+    post: {
+      summary: "Create user (supports nested roles, tiers, support_groups)",
+      description: "Create a user. If 'roles', 'tiers', or 'support_groups' arrays are provided, they will be reconciled atomically. Tiers/support_groups require the Agent role; if tiers/groups provided but no roles, the Agent role will be added automatically when available.",
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['email'],
+              properties: {
+                email: { type: 'string', format: 'email' },
+                full_name: { type: 'string' },
+                phone: { type: 'string' },
+                password: { type: 'string', description: 'Plaintext password; hashed server-side' },
+                is_active: { type: 'boolean' },
+                roles: {
+                  type: 'array',
+                  description: "Roles to assign. Accepts role UUIDs, codes, names, or objects with id/code/name.",
+                  items: { oneOf: [ { type: 'string' }, { type: 'object', properties: { id: { type: 'string' }, code: { type: 'string' }, name: { type: 'string' } } } ] }
+                },
+                tiers: {
+                  type: 'array',
+                  description: "Agent tiers to add. Accepts numeric IDs, codes, names, or objects with id/code/name.",
+                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, code: { type: 'string' }, name: { type: 'string' } } } ] }
+                },
+                support_groups: {
+                  type: 'array',
+                  description: "Support groups to add. Accepts numeric IDs, codes, names, or objects with id/code/name.",
+                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, code: { type: 'string' }, name: { type: 'string' } } } ] }
+                }
+              },
+              additionalProperties: false
+            }
+          }
+        }
+      }
+    }
   },
-  "/api/system/roles": { get: { parameters: [ { name: "q", in: "query", schema: { type: "string" }, description: "Search name/description" } ], description: "List roles.", summary: "List roles" }, post: { requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["name"], properties: { name: { type: "string" }, code: { type: "string", nullable: true }, description: { type: "string", nullable: true } } } } } }, description: "Create a role.", summary: "Create role" } },
+  "/api/system/users/:id": {
+    put: {
+      summary: "Update user (supports nested roles, tiers, support_groups)",
+      description: "Update a user. If 'roles', 'tiers', or 'support_groups' arrays are provided, they will be reconciled (add/remove) atomically. Tiers/support_groups require the Agent role; if absent, the Agent role will be added automatically when available.",
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                email: { type: 'string', format: 'email' },
+                full_name: { type: 'string' },
+                phone: { type: 'string' },
+                password: { type: 'string' },
+                is_active: { type: 'boolean' },
+                roles: {
+                  type: 'array',
+                  description: "Desired roles set. Accepts role UUIDs, codes, names, or objects with id/code/name.",
+                  items: { oneOf: [ { type: 'string' }, { type: 'object', properties: { id: { type: 'string' }, code: { type: 'string' }, name: { type: 'string' } } } ] }
+                },
+                tiers: {
+                  type: 'array',
+                  description: "Desired tiers set. Accepts numeric IDs, codes, names, or objects with id/code/name.",
+                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, code: { type: 'string' }, name: { type: 'string' } } } ] }
+                },
+                support_groups: {
+                  type: 'array',
+                  description: "Desired support groups set. Accepts numeric IDs, codes, names, or objects with id/code/name.",
+                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, code: { type: 'string' }, name: { type: 'string' } } } ] }
+                }
+              },
+              additionalProperties: false
+            }
+          }
+        }
+      }
+    }
+  },
 
-  // Knowledge filters
-  "/api/knowledge/kb-articles": { get: { parameters: [ { name: "q", in: "query", schema: { type: "string" } } ] , description: "List KB articles.", summary: "List KB articles" } },
-  "/api/knowledge/kb/tags": { get: { parameters: [ { name: "q", in: "query", schema: { type: "string" } } ] , description: "List KB tags.", summary: "List KB tags" } },
-  "/api/knowledge/kb/ratings": { get: { parameters: [ { name: "article_id", in: "query", schema: { type: "string" } }, { name: "user_id", in: "query", schema: { type: "string" } } ] , description: "List KB ratings.", summary: "List KB ratings" } },
-  "/api/knowledge/videos": { get: { parameters: [ { name: "q", in: "query", schema: { type: "string" } , description: "Search title/description" }, { name: "category_id", in: "query", schema: { type: "string" } }, { name: "system_category_id", in: "query", schema: { type: "integer" } }, { name: "language", in: "query", schema: { type: "string" } }, { name: "is_published", in: "query", schema: { type: "string", enum: ["true","false"] } } ] , description: "List videos.", summary: "List videos" } },
+  // System roles: nested permissions on create/update
+  "/api/system/roles": {
+    post: {
+      summary: "Create role (supports nested permissions)",
+      description: "Create a role. If a 'permissions' array of codes (or objects with code) is provided, permissions will be assigned atomically.",
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['name'],
+              properties: {
+                code: { type: 'string' },
+                name: { type: 'string' },
+                description: { type: 'string' },
+                permissions: {
+                  type: 'array',
+                  description: "Permission codes to grant. Items may be strings or objects with a 'code' property.",
+                  items: { oneOf: [ { type: 'string' }, { type: 'object', properties: { code: { type: 'string' } }, required: ['code'] } ] }
+                }
+              },
+              additionalProperties: false
+            }
+          }
+        }
+      }
+    }
+  },
+  "/api/system/roles/:id": {
+    put: {
+      summary: "Update role (supports nested permissions)",
+      description: "Update a role. If a 'permissions' array is provided, the role's permissions will be reconciled (add/remove) atomically.",
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                code: { type: 'string' },
+                name: { type: 'string' },
+                description: { type: 'string' },
+                permissions: {
+                  type: 'array',
+                  description: "Complete desired set of permission codes. Items may be strings or objects with 'code'.",
+                  items: { oneOf: [ { type: 'string' }, { type: 'object', properties: { code: { type: 'string' } }, required: ['code'] } ] }
+                }
+              },
+              additionalProperties: false
+            }
+          }
+        }
+      }
+    }
+  },
 };
 
 // Merge override settings into an operation; supports parameters, requestBody, responses, summary, description, security
@@ -548,7 +728,8 @@ export default function buildOpenApi(app) {
       ErrorResponseBase: {
         type: "object",
         required: ["ok", "error", "request_id", "path", "method", "timestamp"],
-        properties: {
+        properties:
+         {
           ok: { type: "boolean", example: false },
           error: {
             type: "object",

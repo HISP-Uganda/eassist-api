@@ -18,7 +18,7 @@ r.get("/", async (req, res, next) => {
 // Create (protected)
 r.post(
   "/",
-  requireAnyPermission(PERMISSIONS.SYS_AGENTS_GROUPS_CREATE, PERMISSIONS.SYSTEM_MANAGE),
+  requireAnyPermission(PERMISSIONS.SYS_LOOKUPS_SUPPORT_GROUPS_CREATE, PERMISSIONS.SYSTEM_MANAGE),
   async (req, res, next) => {
     try {
       const row = await create(t, req.body, ["name", "description"]);
@@ -41,7 +41,7 @@ r.get("/:id", async (req, res, next) => {
 // Update (protected)
 r.put(
   "/:id",
-  requireAnyPermission(PERMISSIONS.SYS_AGENTS_GROUPS_UPDATE, PERMISSIONS.SYSTEM_MANAGE),
+  requireAnyPermission(PERMISSIONS.SYS_LOOKUPS_SUPPORT_GROUPS_UPDATE, PERMISSIONS.SYSTEM_MANAGE),
   async (req, res, next) => {
     try {
       res.json(await update(t, "id", req.params.id, req.body, ["name", "description"]));
@@ -54,7 +54,7 @@ r.put(
 // Delete (protected)
 r.delete(
   "/:id",
-  requireAnyPermission(PERMISSIONS.SYS_AGENTS_GROUPS_DELETE, PERMISSIONS.SYSTEM_MANAGE),
+  requireAnyPermission(PERMISSIONS.SYS_LOOKUPS_SUPPORT_GROUPS_DELETE, PERMISSIONS.SYSTEM_MANAGE),
   async (req, res, next) => {
     try {
       res.json(await remove(t, "id", req.params.id));
@@ -65,4 +65,3 @@ r.delete(
 );
 
 export default r;
-

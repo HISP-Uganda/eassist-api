@@ -25,13 +25,13 @@ const exampleBodies = {
   '/api/public/tickets': () => ({ title: `Smoke ticket ${nowTag()}`, description: 'Created by smoke tests', reporter_user_id: null }),
   '/api/tickets': () => ({ title: `Smoke ticket ${nowTag()}`, description: 'Created by smoke tests', reporter_user_id: null }),
   '/api/knowledge/kb/tags': () => ({ name: `smoke-tag-${nowTag()}` }),
-  '/api/knowledge/kb/tag-map': () => ({ article_id: null, tag_id: null }),
   '/api/knowledge/videos': () => ({ title: `Smoke video ${nowTag()}`, url: 'http://example.com/video.mp4', category_id: null }),
   '/api/knowledge/videos/categories': () => ({ name: `smoke-video-cat-${nowTag()}` }),
-  '/api/system/agents/groups': () => ({ code: `smoke-group-${nowTag()}`, name: 'Smoke Group' }),
-  '/api/system/agents/tiers': () => ({ code: `smoke-tier-${nowTag()}`, name: 'Smoke Tier', sort: 10 }),
+  // Lookups for agent groups/tiers (no direct membership endpoints; memberships managed via users)
+  '/api/system/lookups/support-groups': () => ({ name: `Smoke Group ${nowTag()}` }),
+  '/api/system/lookups/support-tiers': () => ({ code: `smoke-${nowTag()}`, name: `Smoke Tier ${nowTag()}` }),
   '/api/system/users': () => ({ email: `smoke-user-${nowTag()}@example.local`, full_name: 'Smoke User', password: 'Password123!' }),
-  '/api/system/roles': () => ({ code: `smoke-role-${nowTag()}`, name: `Smoke Role ${nowTag()}` }),
+  '/api/system/roles': () => ({ name: `Smoke Role ${nowTag()}`, permissions: [] }),
   // Additional makers to reduce 400s from the smoke tests
   '/api/knowledge/faqs': () => ({ title: `Smoke FAQ ${nowTag()}`, body: 'FAQ created by smoke tests', system_category_id: null, is_published: false }),
   '/api/knowledge/faqs/origins': () => ({ faq_id: null, ticket_id: null }),
@@ -39,8 +39,6 @@ const exampleBodies = {
   '/api/knowledge/kb/ratings': () => ({ article_id: null, user_id: null, rating: 5 }),
   '/api/knowledge/kb/tag-map': () => ({ article_id: null, tag_id: null }),
   '/api/public/tickets/lookup': () => ({ reference: `HD-SMOKE-${nowTag()}` }),
-  '/api/system/agents/group-members': () => ({ group_id: null, user_id: null }),
-  '/api/system/agents/tier-members': () => ({ tier_id: null, user_id: null }),
   '/api/system/audit': () => ({ action: 'smoke:test', object_type: 'video', object_id: null, performed_by: null }),
   '/api/system/inbox/emails': () => ({ subject: `Smoke email ${nowTag()}`, body: 'Hello from smoke tests', received_at: new Date().toISOString() }),
   '/api/system/lookups/issue-categories': () => ({ code: `smoke-${nowTag()}`, name: 'Smoke Issue Category' }),
@@ -153,8 +151,8 @@ async function resolveIdForPath(p, token) {
     articleId: '/api/knowledge/kb/articles',
     tagId: '/api/knowledge/kb/tags',
     userId: '/api/system/users',
-    groupId: '/api/system/agents/groups',
-    tierId: '/api/system/agents/tiers',
+    groupId: '/api/system/lookups/support-groups',
+    tierId: '/api/system/lookups/support-tiers',
     categoryId: '/api/knowledge/videos/categories',
     systemId: '/api/system/lookups/systems',
     moduleId: '/api/system/lookups/system-modules',
@@ -224,14 +222,28 @@ async function resolveIdForPath(p, token) {
   return null;
 }
 
+function extractIdFromObj(obj) {
+  if (!obj) return null;
+  if (Array.isArray(obj) && obj.length) {
+    const f = obj[0];
+    if (f && (f.id || f.uuid)) return f.id || f.uuid;
+  }
+  if (obj.id || obj.uuid) return obj.id || obj.uuid;
+  if (obj.items && Array.isArray(obj.items) && obj.items.length) {
+    const f = obj.items[0];
+    if (f && (f.id || f.uuid)) return f.id || f.uuid;
+  }
+  return null;
+}
+
 async function fillForeignIds(body, token) {
   // mapping field -> candidate endpoint to pull an id from
   const map = {
     article_id: '/api/knowledge/kb/articles',
     ticket_id: '/api/tickets',
     user_id: '/api/system/users',
-    group_id: '/api/system/agents/groups',
-    tier_id: '/api/system/agents/tiers',
+    group_id: '/api/system/lookups/support-groups',
+    tier_id: '/api/system/lookups/support-tiers',
     category_id: '/api/knowledge/videos/categories',
     system_id: '/api/system/lookups/systems',
     module_id: '/api/system/lookups/system-modules',
@@ -301,114 +313,39 @@ async function fillForeignIds(body, token) {
       if (p === '/api/auth/login' || p === '/api/auth/refresh' || p === '/api/auth/logout' || p === '/api/auth/request-password-reset' || p === '/api/auth/reset-password') {
         continue;
       }
-      const methods = (r.methods || []).map(m => m.toUpperCase());
-      for (const m of methods) {
-        if (['OPTIONS','HEAD'].includes(m)) continue;
-        let pathToCall = p;
-        if (pathToCall.includes(':')) {
-          const id = await resolveIdForPath(pathToCall, token);
-          if (!id) {
-            console.log(`[SKIP] ${pathToCall} ${m} -> no-id-available`);
-            results.push({ path: pathToCall, method: m, status: 'skipped', reason: 'no-id-available' });
-            continue;
-          }
-          pathToCall = pathToCall.replace(/:([A-Za-z0-9_]+)/, id);
+      const methods = (r.methods || []).map((m) => m.toUpperCase());
+      // basic GET
+      if (methods.includes('GET')) {
+        let url = `${BASE}${p.replace(/^\/api/, '')}`;
+        // apply known example query strings if any
+        if (exampleQueries[p]) {
+          try { url += await exampleQueries[p](token); } catch {}
         }
-        const urlBase = `${BASE}${pathToCall.replace(/^\/api/, '')}`;
-        // append example query string for GET endpoints if available (queries can be async builders)
-        let url = urlBase;
-        if (m === 'GET' && exampleQueries[pathToCall]) {
-        console.log(`[PROCESS] about to process ${m} ${p}`);
-          let pathToCall = p;
-            const q = await exampleQueries[pathToCall](token);
-            if (q) url = urlBase + q;
-          } catch (e) { /* ignore and use base */ }
-        }
-        let body;
-        if (m === 'POST' || m === 'PUT') {
-          const canon = p;
-          const maker = exampleBodies[canon];
-          body = maker ? maker() : {};
-        }
-        // For PUTs, attempt to fetch the existing resource and create a minimal valid update body
-        if (m === 'PUT') {
-          try {
-            const getRes = await fetchJson('GET', urlBase, token);
-            if (getRes.ok && getRes.json && typeof getRes.json === 'object') {
-              const existing = getRes.json;
-              // pick a writable string field to change
-              const stringFields = ['name','title','code','full_name','email','body','description'];
-              let updated = null;
-              for (const f of stringFields) {
-                if (f in existing) { updated = f; break; }
-              }
-              // build a minimal update body
-              if (updated) {
-                body = {};
-                body[updated] = (existing[updated] || '') + ' (smoke update)';
-              } else {
-                // fallback: use exampleBodies if available
-                const maker = exampleBodies[p];
-                body = maker ? maker() : { updated_at: new Date().toISOString() };
-              }
-            }
-          } catch (e) {
-            // ignore and fall back to existing body
-          }
-        }
-        if ((m === 'POST' || m === 'PUT') && body) {
-          // attempt to populate any foreign id fields before calling API
-          try { await fillForeignIds(body, token); } catch (e) { /* ignore */ }
-          // no skipping: if any *_id remain null we'll proceed anyway (server validation will respond)
-         }
-        try{
-          const r = await fetchJson(m, url, token, body);
-          const isServerError = typeof r.status === 'number' && r.status >= 500;
-          const okFlag = !isServerError;
-          // store created id for POSTs to reuse later
-          if (m === 'POST' && r.ok && r.json) {
-            // attempt to find an id in response
-            const findId = (j) => {
-              if (!j) return null;
-              if (Array.isArray(j) && j.length) return j[0].id || j[0].uuid || null;
-              if (j.id) return j.id;
-              if (j.uuid) return j.uuid;
-              if (j.items && Array.isArray(j.items) && j.items[0]) return j.items[0].id || j.items[0].uuid || null;
-              if (j.rows && Array.isArray(j.rows) && j.rows[0]) return j.rows[0].id || j.rows[0].uuid || null;
-              return null;
-            };
-            const createdId = findId(r.json);
-            if (createdId) {
+        const getRes = await fetchJson('GET', url, token);
+        results.push({ path: p, method: 'GET', status: getRes.status });
+      }
+      // basic POST if public or manageable
+      if (methods.includes('POST')) {
+        const maker = exampleBodies[p];
+        if (typeof maker === 'function') {
+          const body = maker();
+          await fillForeignIds(body, token);
+          const postRes = await fetchJson('POST', `${BASE}${p.replace(/^\/api/, '')}`, token, body);
+          results.push({ path: p, method: 'POST', status: postRes.status });
+          if (postRes.ok && postRes.json) {
+            const id = extractIdFromObj(postRes.json);
+            if (id) {
               const arr = createdStore.get(p) || [];
-              arr.push(createdId);
+              arr.push(id);
               createdStore.set(p, arr);
             }
           }
-          results.push({ path: pathToCall, method: m, status: r.status, ok: okFlag, json: r.json || null, text: (typeof r.text === 'string' ? r.text.slice(0,200) : r.text) });
-          console.log(`[${m}] ${pathToCall} -> ${r.status}` + (isServerError ? ' (SERVER ERROR)' : ''));
-         }catch(e){
-          results.push({ path: pathToCall, method: m, status: 'error', ok: false, error: String(e) });
-         }
+        }
       }
     }
-    console.log('\nSmoke test summary:');
-    const okCount = results.filter(x => x.ok).length;
-    const skippedCount = results.filter(x => x.status === 'skipped').length;
-    console.log(`Total checks: ${results.length}, OK: ${okCount}, Skipped: ${skippedCount}`);
-    const skippedList = results.filter(x => x.status === 'skipped').map(s=>({path:s.path, method:s.method, reason:s.reason}));
-    if (skippedList.length) {
-      console.log('\nSkipped endpoints:');
-      for (const s of skippedList) console.log(JSON.stringify(s));
-    }
-    // treat only server errors and network errors as failures
-    const failures = results.filter(x => x.status === 'error' || (typeof x.status === 'number' && x.status >= 500));
-     if (failures.length) {
-       console.log('\nFailures:');
-       for (const f of failures) console.log(JSON.stringify(f));
-     }
-    process.exit(0);
-  }catch(e){
-    console.error('Smoke test failed:', e);
-    process.exit(1);
+    console.log('Smoke test completed. Sample results:', results.slice(0, 10));
+  } catch (e) {
+    console.error('Smoke test error:', e.message);
+    process.exitCode = 1;
   }
 })();

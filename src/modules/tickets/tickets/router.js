@@ -152,7 +152,9 @@ r.post(
   "/",
   requireAnyPermission(PERMISSIONS.TICKETS_CREATE, PERMISSIONS.TICKETS_MANAGE),
   async (req, res, next) => {
+    const client = await pool.connect();
     try {
+      await client.query('BEGIN');
       const body = req.body || {};
       // Basic required fields
       if (!body.title || !String(body.title).trim()) {
@@ -179,19 +181,17 @@ r.post(
       // Remove unsupported field system_category_id (belongs to other tables)
       if (Object.prototype.hasOwnProperty.call(body, 'system_category_id')) delete body.system_category_id;
 
-      // Resolve source_id if not provided: prefer explicit source_code, otherwise default to Agent Reporting (or other predefined agent sources)
+      // Resolve source_id if not provided
       if (body.source_id === undefined || body.source_id === null) {
         try {
           let srcRow = null;
           const explicit = body.source_code || body.source || null;
           if (explicit && String(explicit).trim()) {
             const code = String(explicit).trim().toLowerCase();
-            const q = await pool.query(`SELECT id FROM sources WHERE lower(code)=$1 OR lower(name)=$1 LIMIT 1`, [code]);
+            const q = await client.query(`SELECT id FROM sources WHERE lower(code)=$1 OR lower(name)=$1 LIMIT 1`, [code]);
             srcRow = q.rows[0] || null;
           }
           if (!srcRow) {
-            // Prioritized fallback list for authenticated/internal creation
-            // Defaults to Agent Reporting when available
             const fallbacks = [
               'agent_reporting','agent reporting',
               'phone_call','phone call',
@@ -201,7 +201,8 @@ r.post(
               'community_of_practice','community of practice','cop'
             ];
             for (const token of fallbacks) {
-              const q = await pool.query(`SELECT id FROM sources WHERE lower(code)=$1 OR lower(name)=$1 LIMIT 1`, [token]);
+              // eslint-disable-next-line no-await-in-loop
+              const q = await client.query(`SELECT id FROM sources WHERE lower(code)=$1 OR lower(name)=$1 LIMIT 1`, [token]);
               if (q.rows[0]?.id != null) { srcRow = q.rows[0]; break; }
             }
           }
@@ -209,15 +210,84 @@ r.post(
         } catch (_) { /* ignore */ }
       }
 
-      // Proceed with generic creator using the allow list
-      const created = await create(table, body, allow);
-      res.status(201).json(created);
+      // Insert ticket using allow list
+      const allowedCols = [
+        "ticket_key","title","description","reporter_user_id","reporter_email","full_name","phone_number","system_id","module_id","category_id","status_id","priority_id","severity_id","source_id","assigned_agent_id","group_id","tier_id","claimed_by","claimed_at"
+      ];
+      const cols = Object.keys(body).filter(k=>allowedCols.includes(k));
+      const colNames = cols.map(c=>`"${c}"`).join(',');
+      const placeholders = cols.map((_,i)=>`$${i+1}`).join(',');
+      const ins = await client.query(
+        `INSERT INTO ${table} (${colNames}) VALUES (${placeholders}) RETURNING *`,
+        cols.map(c=>body[c])
+      );
+      const ticket = ins.rows[0];
+
+      // Optional nested creations
+      const userId = req.user?.sub || null;
+
+      // notes: [{ body, is_internal, user_id? }]
+      const notes = Array.isArray(req.body.notes) ? req.body.notes : [];
+      for (const n of notes) {
+        const nb = (n && typeof n === 'object') ? n : {};
+        if (!nb.body || !String(nb.body).trim()) continue;
+        const noteUser = nb.user_id || userId || null;
+        // eslint-disable-next-line no-await-in-loop
+        const nq = await client.query(
+          `INSERT INTO ticket_notes (ticket_id,user_id,body,is_internal) VALUES ($1,$2,$3,COALESCE($4,false)) RETURNING id`,
+          [ticket.id, noteUser, nb.body, Boolean(nb.is_internal)]
+        );
+        // eslint-disable-next-line no-await-in-loop
+        await client.query(
+          `INSERT INTO ticket_events (ticket_id,event_type,actor_user_id,details) VALUES ($1,'note_added',$2,$3::jsonb)`,
+          [ticket.id, noteUser, JSON.stringify({ note_id: nq.rows[0].id })]
+        );
+      }
+
+      // attachments: [{ file_name,file_type,file_size_bytes,storage_path, uploaded_by? }]
+      const attachments = Array.isArray(req.body.attachments) ? req.body.attachments : [];
+      for (const a of attachments) {
+        const ab = (a && typeof a === 'object') ? a : {};
+        if (!ab.file_name || !ab.file_type || !ab.storage_path || !ab.file_size_bytes) continue;
+        const uploader = ab.uploaded_by || userId || null;
+        // eslint-disable-next-line no-await-in-loop
+        const aq = await client.query(
+          `INSERT INTO ticket_attachments (ticket_id,file_name,file_type,file_size_bytes,storage_path,uploaded_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+          [ticket.id, ab.file_name, ab.file_type, ab.file_size_bytes, ab.storage_path, uploader]
+        );
+        // eslint-disable-next-line no-await-in-loop
+        await client.query(
+          `INSERT INTO ticket_events (ticket_id,event_type,actor_user_id,details) VALUES ($1,'attachment_added',$2,$3::jsonb)`,
+          [ticket.id, uploader, JSON.stringify({ attachment_id: aq.rows[0].id })]
+        );
+      }
+
+      // watchers: [{ user_id?, email?, notify? }]
+      const watchers = Array.isArray(req.body.watchers) ? req.body.watchers : [];
+      for (const w of watchers) {
+        const wb = (w && typeof w === 'object') ? w : {};
+        const u = wb.user_id || null;
+        const em = wb.email || null;
+        const nf = (wb.notify == null) ? true : !!wb.notify;
+        if (!u && !em) continue; // need at least one
+        // eslint-disable-next-line no-await-in-loop
+        await client.query(
+          `INSERT INTO ticket_watchers (ticket_id,user_id,email,notify) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+          [ticket.id, u, em, nf]
+        );
+      }
+
+      await client.query('COMMIT');
+      res.status(201).json(ticket);
     } catch (e) {
+      try { await client.query('ROLLBACK'); } catch {}
       // Translate FK violations into 400 for a clearer client message
       if (e && e.code === '23503') {
         return next(BadRequest('Invalid foreign key value', { detail: e.detail }));
       }
       next(e);
+    } finally {
+      client.release();
     }
   }
 );
