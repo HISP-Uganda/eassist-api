@@ -59,12 +59,13 @@ function authSecurity() {
   ];
 }
 
-function isNoAuthPath(path) {
+function isNoAuthPath(path, method = 'get') {
+  const m = String(method || 'get').toLowerCase();
   if (path.startsWith("/api/public")) return true;
   if (path === "/api/info" || path === "/api/resources") return true;
   if (path === "/api/docs.json" || path.startsWith("/api/docs")) return true;
-  // Lookups are public for GET
-  if (path.startsWith("/api/system/lookups")) return true;
+  // Lookups: only GET are public; writes require auth
+  if (path.startsWith("/api/system/lookups")) return m === 'get';
   // Auth routes: explicitly list public ones; others require auth
   if (
     path === "/api/auth/login" ||
@@ -408,8 +409,8 @@ const OVERRIDES = {
   // System users: nested payloads (roles, tiers, support_groups)
   "/api/system/users": {
     post: {
-      summary: "Create user (supports nested roles, tiers, support_groups)",
-      description: "Create a user. If 'roles', 'tiers', or 'support_groups' arrays are provided, they will be reconciled atomically. Tiers/support_groups require the Agent role; if tiers/groups provided but no roles, the Agent role will be added automatically when available.",
+      summary: "Create user (supports nested roles, single tier, support_groups)",
+      description: "Create a user. If 'roles', 'tiers', or 'support_groups' arrays are provided, they will be reconciled atomically. Users can belong to only one support tier; if tiers/support_groups are provided but no roles, the Agent role will be added automatically when available.",
       requestBody: {
         required: true,
         content: {
@@ -430,13 +431,14 @@ const OVERRIDES = {
                 },
                 tiers: {
                   type: 'array',
-                  description: "Agent tiers to add. Accepts numeric IDs, codes, names, or objects with id/code/name.",
-                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, code: { type: 'string' }, name: { type: 'string' } } } ] }
+                  maxItems: 1,
+                  description: "Single support tier to add. Accepts numeric IDs, names, or objects with id/name.",
+                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' } } } ] }
                 },
                 support_groups: {
                   type: 'array',
-                  description: "Support groups to add. Accepts numeric IDs, codes, names, or objects with id/code/name.",
-                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, code: { type: 'string' }, name: { type: 'string' } } } ] }
+                  description: "Support groups to add. Accepts numeric IDs, names, or objects with id/name.",
+                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' } } } ] }
                 }
               },
               additionalProperties: false
@@ -448,8 +450,8 @@ const OVERRIDES = {
   },
   "/api/system/users/:id": {
     put: {
-      summary: "Update user (supports nested roles, tiers, support_groups)",
-      description: "Update a user. If 'roles', 'tiers', or 'support_groups' arrays are provided, they will be reconciled (add/remove) atomically. Tiers/support_groups require the Agent role; if absent, the Agent role will be added automatically when available.",
+      summary: "Update user (supports nested roles, single tier, support_groups)",
+      description: "Update a user. If 'roles', 'tiers', or 'support_groups' arrays are provided, they will be reconciled (add/remove) atomically. Users can belong to only one support tier; if absent, the Agent role will be added automatically when available.",
       requestBody: {
         required: true,
         content: {
@@ -469,13 +471,14 @@ const OVERRIDES = {
                 },
                 tiers: {
                   type: 'array',
-                  description: "Desired tiers set. Accepts numeric IDs, codes, names, or objects with id/code/name.",
-                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, code: { type: 'string' }, name: { type: 'string' } } } ] }
+                  maxItems: 1,
+                  description: "Desired support tier (max 1). Accepts numeric IDs, names, or objects with id/name.",
+                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' } } } ] }
                 },
                 support_groups: {
                   type: 'array',
-                  description: "Desired support groups set. Accepts numeric IDs, codes, names, or objects with id/code/name.",
-                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, code: { type: 'string' }, name: { type: 'string' } } } ] }
+                  description: "Desired support groups set. Accepts numeric IDs, names, or objects with id/name.",
+                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' } } } ] }
                 }
               },
               additionalProperties: false
@@ -1020,7 +1023,7 @@ export default function buildOpenApi(app) {
         summary: opSummary(method, e.path),
         description:
           defaultDescription(method, e.path),
-        security: isNoAuthPath(e.path) ? [] : authSecurity(),
+        security: isNoAuthPath(e.path, method) ? [] : authSecurity(),
         parameters: [...params],
         responses: {
           200: {
@@ -1028,7 +1031,7 @@ export default function buildOpenApi(app) {
             content: {
               "application/json": {
                 schema: { type: "object" },
-                examples: buildCurlExamples(e.path, method, isNoAuthPath(e.path)),
+                examples: buildCurlExamples(e.path, method, isNoAuthPath(e.path, method)),
               },
             },
           },

@@ -471,6 +471,13 @@ export const PERMISSION_LABELS = Object.freeze({
   "system.users.delete": "System: Users Delete",
   "system.users.roles.assign": "System: Users Roles Assign",
   "system.users.roles.remove": "System: Users Roles Remove",
+  // New: user memberships
+  "system.users.tiers.read": "System: Users Tiers Read",
+  "system.users.tiers.add": "System: Users Tiers Add",
+  "system.users.tiers.remove": "System: Users Tiers Remove",
+  "system.users.supportGroups.read": "System: Users Support Groups Read",
+  "system.users.supportGroups.add": "System: Users Support Groups Add",
+  "system.users.supportGroups.remove": "System: Users Support Groups Remove",
 
   // System Roles
   "system.roles.list": "System: Roles List",
@@ -518,24 +525,15 @@ export const PERMISSION_LABELS = Object.freeze({
   "system.lookups.issueCategories.create": "Lookups: Issue Categories Create",
   "system.lookups.issueCategories.update": "Lookups: Issue Categories Update",
   "system.lookups.issueCategories.delete": "Lookups: Issue Categories Delete",
-
-  // Agents
-  "system.agents.groups.list": "Agents: Groups List",
-  "system.agents.groups.read": "Agents: Groups Read",
-  "system.agents.groups.create": "Agents: Groups Create",
-  "system.agents.groups.update": "Agents: Groups Update",
-  "system.agents.groups.delete": "Agents: Groups Delete",
-  "system.agents.groupMembers.list": "Agents: Group Members List",
-  "system.agents.groupMembers.add": "Agents: Group Members Add",
-  "system.agents.groupMembers.remove": "Agents: Group Members Remove",
-  "system.agents.tiers.list": "Agents: Tiers List",
-  "system.agents.tiers.read": "Agents: Tiers Read",
-  "system.agents.tiers.create": "Agents: Tiers Create",
-  "system.agents.tiers.update": "Agents: Tiers Update",
-  "system.agents.tiers.delete": "Agents: Tiers Delete",
-  "system.agents.tierMembers.list": "Agents: Tier Members List",
-  "system.agents.tierMembers.add": "Agents: Tier Members Add",
-  "system.agents.tierMembers.remove": "Agents: Tier Members Remove",
+  // New: support groups/tiers lookups
+  "system.lookups.supportGroups.list": "Lookups: Support Groups List",
+  "system.lookups.supportGroups.create": "Lookups: Support Groups Create",
+  "system.lookups.supportGroups.update": "Lookups: Support Groups Update",
+  "system.lookups.supportGroups.delete": "Lookups: Support Groups Delete",
+  "system.lookups.supportTiers.list": "Lookups: Support Tiers List",
+  "system.lookups.supportTiers.create": "Lookups: Support Tiers Create",
+  "system.lookups.supportTiers.update": "Lookups: Support Tiers Update",
+  "system.lookups.supportTiers.delete": "Lookups: Support Tiers Delete",
 
   // Settings
   "system.settings.general.read": "Settings: General Read",

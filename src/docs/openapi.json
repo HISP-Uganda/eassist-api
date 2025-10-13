@@ -3180,7 +3180,20 @@
         ],
         "summary": "POST /api/system/lookups/statuses",
         "description": "Create a new statuse.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "201": {
@@ -3199,9 +3212,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/statuses' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/statuses' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -3647,7 +3657,20 @@
         ],
         "summary": "PUT /api/system/lookups/statuses/:id",
         "description": "Update an existing statuse.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -3676,9 +3699,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/statuses/:id' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/statuses/:id' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -3865,7 +3885,20 @@
         ],
         "summary": "DELETE /api/system/lookups/statuses/:id",
         "description": "Delete a statuse.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -3894,9 +3927,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/statuses/:id' -u 'user@example.com:password'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/statuses/:id'"
                   }
                 }
               }
@@ -4356,7 +4386,20 @@
         ],
         "summary": "POST /api/system/lookups/priorities",
         "description": "Create a new prioritie.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "201": {
@@ -4375,9 +4418,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/priorities' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/priorities' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -4823,7 +4863,20 @@
         ],
         "summary": "PUT /api/system/lookups/priorities/:id",
         "description": "Update an existing prioritie.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -4852,9 +4905,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/priorities/:id' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/priorities/:id' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -5041,7 +5091,20 @@
         ],
         "summary": "DELETE /api/system/lookups/priorities/:id",
         "description": "Delete a prioritie.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -5070,9 +5133,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/priorities/:id' -u 'user@example.com:password'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/priorities/:id'"
                   }
                 }
               }
@@ -5532,7 +5592,20 @@
         ],
         "summary": "POST /api/system/lookups/severities",
         "description": "Create a new severitie.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "201": {
@@ -5551,9 +5624,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/severities' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/severities' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -5999,7 +6069,20 @@
         ],
         "summary": "PUT /api/system/lookups/severities/:id",
         "description": "Update an existing severitie.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -6028,9 +6111,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/severities/:id' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/severities/:id' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -6217,7 +6297,20 @@
         ],
         "summary": "DELETE /api/system/lookups/severities/:id",
         "description": "Delete a severitie.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -6246,9 +6339,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/severities/:id' -u 'user@example.com:password'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/severities/:id'"
                   }
                 }
               }
@@ -6708,7 +6798,20 @@
         ],
         "summary": "POST /api/system/lookups/sources",
         "description": "Create a new source.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "201": {
@@ -6727,9 +6830,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/sources' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/sources' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -7175,7 +7275,20 @@
         ],
         "summary": "PUT /api/system/lookups/sources/:id",
         "description": "Update an existing source.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -7204,9 +7317,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/sources/:id' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/sources/:id' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -7393,7 +7503,20 @@
         ],
         "summary": "DELETE /api/system/lookups/sources/:id",
         "description": "Delete a source.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -7422,9 +7545,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/sources/:id' -u 'user@example.com:password'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/sources/:id'"
                   }
                 }
               }
@@ -7884,7 +8004,20 @@
         ],
         "summary": "POST /api/system/lookups/systems",
         "description": "Create a new system.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "201": {
@@ -7903,9 +8036,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/systems' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/systems' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -8351,7 +8481,20 @@
         ],
         "summary": "PUT /api/system/lookups/systems/:id",
         "description": "Update an existing system.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -8380,9 +8523,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/systems/:id' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/systems/:id' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -8569,7 +8709,20 @@
         ],
         "summary": "DELETE /api/system/lookups/systems/:id",
         "description": "Delete a system.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -8598,9 +8751,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/systems/:id' -u 'user@example.com:password'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/systems/:id'"
                   }
                 }
               }
@@ -9060,7 +9210,20 @@
         ],
         "summary": "POST /api/system/lookups/system-modules",
         "description": "Create a new system-module.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "201": {
@@ -9079,9 +9242,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/system-modules' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/system-modules' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -9527,7 +9687,20 @@
         ],
         "summary": "PUT /api/system/lookups/system-modules/:id",
         "description": "Update an existing system-module.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -9556,9 +9729,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/system-modules/:id' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/system-modules/:id' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -9745,7 +9915,20 @@
         ],
         "summary": "DELETE /api/system/lookups/system-modules/:id",
         "description": "Delete a system-module.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -9774,9 +9957,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/system-modules/:id' -u 'user@example.com:password'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/system-modules/:id'"
                   }
                 }
               }
@@ -10236,7 +10416,20 @@
         ],
         "summary": "POST /api/system/lookups/issue-categories",
         "description": "Create a new issue-categorie.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "201": {
@@ -10255,9 +10448,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/issue-categories' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/issue-categories' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -10703,7 +10893,20 @@
         ],
         "summary": "PUT /api/system/lookups/issue-categories/:id",
         "description": "Update an existing issue-categorie.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -10732,9 +10935,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/issue-categories/:id' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/issue-categories/:id' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -10921,7 +11121,20 @@
         ],
         "summary": "DELETE /api/system/lookups/issue-categories/:id",
         "description": "Delete a issue-categorie.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -10950,9 +11163,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/issue-categories/:id' -u 'user@example.com:password'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/issue-categories/:id'"
                   }
                 }
               }
@@ -11412,7 +11622,20 @@
         ],
         "summary": "POST /api/system/lookups/system-category",
         "description": "Create a new system-category.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "201": {
@@ -11431,9 +11654,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/system-category' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/system-category' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -11879,7 +12099,20 @@
         ],
         "summary": "PUT /api/system/lookups/system-category/:id",
         "description": "Update an existing system-category.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -11908,9 +12141,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/system-category/:id' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/system-category/:id' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -12097,7 +12327,20 @@
         ],
         "summary": "DELETE /api/system/lookups/system-category/:id",
         "description": "Delete a system-category.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -12126,9 +12369,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/system-category/:id' -u 'user@example.com:password'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/system-category/:id'"
                   }
                 }
               }
@@ -12588,7 +12828,20 @@
         ],
         "summary": "POST /api/system/lookups/support-tiers",
         "description": "Create a new support-tier.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "201": {
@@ -12607,9 +12860,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/support-tiers' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/support-tiers' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -13055,7 +13305,20 @@
         ],
         "summary": "PUT /api/system/lookups/support-tiers/:id",
         "description": "Update an existing support-tier.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -13084,9 +13347,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/support-tiers/:id' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/support-tiers/:id' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -13273,7 +13533,20 @@
         ],
         "summary": "DELETE /api/system/lookups/support-tiers/:id",
         "description": "Delete a support-tier.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -13302,9 +13575,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/support-tiers/:id' -u 'user@example.com:password'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/support-tiers/:id'"
                   }
                 }
               }
@@ -13764,7 +14034,20 @@
         ],
         "summary": "POST /api/system/lookups/support-groups",
         "description": "Create a new support-group.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "201": {
@@ -13783,9 +14066,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/support-groups' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/support-groups' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -14231,7 +14511,20 @@
         ],
         "summary": "PUT /api/system/lookups/support-groups/:id",
         "description": "Update an existing support-group.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -14260,9 +14553,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/support-groups/:id' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/support-groups/:id' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -14449,7 +14739,20 @@
         ],
         "summary": "DELETE /api/system/lookups/support-groups/:id",
         "description": "Delete a support-group.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -14478,9 +14781,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/support-groups/:id' -u 'user@example.com:password'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/support-groups/:id'"
                   }
                 }
               }
@@ -14940,7 +15240,20 @@
         ],
         "summary": "POST /api/system/lookups/video-categories",
         "description": "Create a new video-categorie.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [],
         "responses": {
           "201": {
@@ -14959,9 +15272,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/video-categories' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X POST 'http://localhost:8080/api/system/lookups/video-categories' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -15407,7 +15717,20 @@
         ],
         "summary": "PUT /api/system/lookups/video-categories/:id",
         "description": "Update an existing video-categorie.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -15436,9 +15759,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/video-categories/:id' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X PUT 'http://localhost:8080/api/system/lookups/video-categories/:id' -H 'Content-Type: application/json' -d '{}'"
                   }
                 }
               }
@@ -15625,7 +15945,20 @@
         ],
         "summary": "DELETE /api/system/lookups/video-categories/:id",
         "description": "Delete a video-categorie.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "basicAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -15654,9 +15987,6 @@
                   },
                   "basicCurl": {
                     "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/video-categories/:id' -u 'user@example.com:password'"
-                  },
-                  "publicCurl": {
-                    "value": "curl -s -X DELETE 'http://localhost:8080/api/system/lookups/video-categories/:id'"
                   }
                 }
               }
@@ -41583,8 +41913,8 @@
         "tags": [
           "system/users"
         ],
-        "summary": "Create user (supports nested roles, tiers, support_groups)",
-        "description": "Create a user. If 'roles', 'tiers', or 'support_groups' arrays are provided, they will be reconciled atomically. Tiers/support_groups require the Agent role; if tiers/groups provided but no roles, the Agent role will be added automatically when available.",
+        "summary": "Create user (supports nested roles, single tier, support_groups)",
+        "description": "Create a user. If 'roles', 'tiers', or 'support_groups' arrays are provided, they will be reconciled atomically. Users can belong to only one support tier; if tiers/support_groups are provided but no roles, the Agent role will be added automatically when available.",
         "security": [
           {
             "bearerAuth": []
@@ -42070,8 +42400,8 @@
         "tags": [
           "system/users"
         ],
-        "summary": "Update user (supports nested roles, tiers, support_groups)",
-        "description": "Update a user. If 'roles', 'tiers', or 'support_groups' arrays are provided, they will be reconciled (add/remove) atomically. Tiers/support_groups require the Agent role; if absent, the Agent role will be added automatically when available.",
+        "summary": "Update user (supports nested roles, single tier, support_groups)",
+        "description": "Update a user. If 'roles', 'tiers', or 'support_groups' arrays are provided, they will be reconciled (add/remove) atomically. Users can belong to only one support tier; if absent, the Agent role will be added automatically when available.",
         "security": [
           {
             "bearerAuth": []

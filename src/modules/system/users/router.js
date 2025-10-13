@@ -47,13 +47,11 @@ async function resolveRoleId(input) {
 async function resolveTierId(input) {
   if (!input) return null;
   if (typeof input === 'string' && /^[0-9]+$/.test(input)) return Number(input);
-  if (typeof input === 'object' && input.id) return input.id;
-  const val = typeof input === 'string' ? input : (input.code || input.name);
+  if (typeof input === 'object' && (input.id != null)) return Number(input.id);
+  const val = typeof input === 'string' ? input : (input.name);
   if (!val) return null;
   const byId = await pool.query(`SELECT id FROM agent_tiers WHERE id::text = $1`, [val]);
   if (byId.rowCount) return byId.rows[0].id;
-  const byCode = await pool.query(`SELECT id FROM agent_tiers WHERE lower(code) = lower($1)`, [val]);
-  if (byCode.rowCount) return byCode.rows[0].id;
   const byName = await pool.query(`SELECT id FROM agent_tiers WHERE lower(name) = lower($1)`, [val]);
   if (byName.rowCount) return byName.rows[0].id;
   return null;
@@ -62,13 +60,11 @@ async function resolveTierId(input) {
 async function resolveGroupId(input) {
   if (!input) return null;
   if (typeof input === 'string' && /^[0-9]+$/.test(input)) return Number(input);
-  if (typeof input === 'object' && input.id) return input.id;
-  const val = typeof input === 'string' ? input : (input.code || input.name);
+  if (typeof input === 'object' && (input.id != null)) return Number(input.id);
+  const val = typeof input === 'string' ? input : (input.name);
   if (!val) return null;
   const byId = await pool.query(`SELECT id FROM agent_groups WHERE id::text = $1`, [val]);
   if (byId.rowCount) return byId.rows[0].id;
-  const byCode = await pool.query(`SELECT id FROM agent_groups WHERE lower(code) = lower($1)`, [val]);
-  if (byCode.rowCount) return byCode.rows[0].id;
   const byName = await pool.query(`SELECT id FROM agent_groups WHERE lower(name) = lower($1)`, [val]);
   if (byName.rowCount) return byName.rows[0].id;
   return null;
@@ -206,24 +202,19 @@ r.post(
 
       // Nested: tiers (only if Agent)
       if (wantsTiers) {
+        // Enforce single-tier policy
+        const arr = Array.isArray(req.body.tiers) ? req.body.tiers : [];
+        if (arr.length > 1) return next(BadRequest('A user can belong to only one support tier. Provide a single tier.'));
         const isAgent = roleIds.length ? true : await userHasAgentRole(user.id);
         if (!isAgent) return next(BadRequest('User must have Agent role to assign tiers'));
-        const tierIds = [];
-        for (const tInput of req.body.tiers) {
-          // eslint-disable-next-line no-await-in-loop
-          const tid = await resolveTierId(tInput);
-          if (tid != null) tierIds.push(Number(tid));
-        }
-        if (tierIds.length) {
-          // bulk insert
-          for (const tid of tierIds) {
-            // eslint-disable-next-line no-await-in-loop
-            await client.query(
-              `INSERT INTO agent_tier_members (tier_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
-              [tid, user.id]
-            );
-          }
-        }
+        const tid = await resolveTierId(arr[0]);
+        if (tid == null) return next(BadRequest('Invalid tier reference'));
+        // Replace any existing tier membership with the new one
+        await client.query(`DELETE FROM agent_tier_members WHERE user_id=$1`, [user.id]);
+        await client.query(
+          `INSERT INTO agent_tier_members (tier_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+          [Number(tid), user.id]
+        );
       }
 
       // Nested: support groups (agent groups)
@@ -360,23 +351,19 @@ r.put(
 
       // Reconcile tiers if provided
       if (Array.isArray(req.body.tiers)) {
-        const wantTierIds = [];
-        for (const tInput of req.body.tiers) {
-          // eslint-disable-next-line no-await-in-loop
-          const tid = await resolveTierId(tInput);
-          if (tid != null) wantTierIds.push(Number(tid));
-        }
-        const curQ = await client.query(`SELECT tier_id FROM agent_tier_members WHERE user_id=$1`, [req.params.id]);
-        const cur = new Set(curQ.rows.map(r=>Number(r.tier_id)));
-        const want = new Set(wantTierIds.map(Number));
-        const toAdd = [...want].filter(id => !cur.has(id));
-        const toDel = [...cur].filter(id => !want.has(id));
-        for (const tid of toAdd) {
-          // eslint-disable-next-line no-await-in-loop
-          await client.query(`INSERT INTO agent_tier_members (tier_id,user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [tid, req.params.id]);
-        }
-        if (toDel.length) {
-          await client.query(`DELETE FROM agent_tier_members WHERE user_id=$1 AND tier_id = ANY($2::int[])`, [req.params.id, toDel]);
+        const arr = req.body.tiers;
+        if (arr.length > 1) return next(BadRequest('A user can belong to only one support tier. Provide at most one.'));
+        if (arr.length === 0) {
+          await client.query(`DELETE FROM agent_tier_members WHERE user_id=$1`, [req.params.id]);
+        } else {
+          const tid = await resolveTierId(arr[0]);
+          if (tid == null) return next(BadRequest('Invalid tier reference'));
+          // Replace set with exactly this one
+          await client.query(`DELETE FROM agent_tier_members WHERE user_id=$1 AND tier_id <> $2`, [req.params.id, Number(tid)]);
+          await client.query(
+            `INSERT INTO agent_tier_members (tier_id,user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+            [Number(tid), req.params.id]
+          );
         }
       }
 
@@ -514,9 +501,11 @@ r.post(
   async (req, res, next) => {
     try {
       const isAgent = await userHasAgentRole(req.params.id);
-      if (!isAgent) return next(BadRequest('User must have Agent role to add tiers'));
-      const tid = await resolveTierId(req.body.tier_id || req.body.tier || req.body.tier_code || req.body.tier_name);
-      if (tid == null) return next(BadRequest('tier_id (or tier name/code) required'));
+      if (!isAgent) return next(BadRequest('User must have Agent role to set a tier'));
+      const tid = await resolveTierId(req.body.tier_id || req.body.tier || req.body.tier_name);
+      if (tid == null) return next(BadRequest('tier_id (or tier name) required'));
+      // Replace any existing tier with the new one
+      await pool.query(`DELETE FROM agent_tier_members WHERE user_id=$1`, [req.params.id]);
       await pool.query(
         `INSERT INTO agent_tier_members (tier_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
         [Number(tid), req.params.id]
@@ -564,8 +553,8 @@ r.post(
     try {
       const isAgent = await userHasAgentRole(req.params.id);
       if (!isAgent) return next(BadRequest('User must have Agent role to add support groups'));
-      const gid = await resolveGroupId(req.body.group_id || req.body.group || req.body.group_code || req.body.group_name);
-      if (gid == null) return next(BadRequest('group_id (or group name/code) required'));
+      const gid = await resolveGroupId(req.body.group_id || req.body.group || req.body.group_name);
+      if (gid == null) return next(BadRequest('group_id (or group name) required'));
       await pool.query(
        `INSERT INTO agent_group_members (group_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
         [Number(gid), req.params.id]
