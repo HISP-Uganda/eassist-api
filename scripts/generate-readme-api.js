@@ -68,7 +68,23 @@ function listRequired(schema) {
 function renderProps(schema, doc, indentLevel = 1) {
   const s = deref(doc, schema) || {};
   if (s.type === 'array' && s.items) {
-    return [bullet(`items: ${typeOfSchema(s.items)}`, indentLevel)];
+    const itemSchema = deref(doc, s.items) || {};
+    const lines = [];
+    lines.push(bullet(`items: ${typeOfSchema(itemSchema)}`, indentLevel));
+    // If array items are objects with properties, list them too
+    if ((itemSchema.type === 'object' || itemSchema.properties) && itemSchema.properties) {
+      const req = new Set(listRequired(itemSchema));
+      for (const [name, prop] of Object.entries(itemSchema.properties)) {
+        const d = deref(doc, prop) || {};
+        const type = typeOfSchema(d);
+        const fmt = d.format ? ` (${d.format})` : '';
+        const en = Array.isArray(d.enum) ? ` enum: ${d.enum.join('|')}` : '';
+        const required = req.has(name) ? ' (required)' : '';
+        const desc = d.description ? ` — ${d.description}` : '';
+        lines.push(bullet(`${code(name)}: ${type}${fmt}${required}${en}${desc}`, indentLevel + 1));
+      }
+    }
+    return lines;
   }
   const props = s.properties || {};
   const req = new Set(listRequired(s));
