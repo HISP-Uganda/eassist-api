@@ -1845,6 +1845,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -2133,6 +2142,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -2914,6 +2932,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -3456,6 +3483,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -4120,6 +4156,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -4662,6 +4707,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -5326,6 +5380,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -5868,6 +5931,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -6532,6 +6604,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -7074,6 +7155,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -7738,6 +7828,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -8280,6 +8379,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -8944,6 +9052,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -9486,6 +9603,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -10150,6 +10276,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -10692,6 +10827,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -11356,6 +11500,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -11898,6 +12051,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -12562,6 +12724,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -13104,6 +13275,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -13768,6 +13948,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -14310,6 +14499,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -14974,6 +15172,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -15516,6 +15723,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -16193,6 +16409,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -16483,6 +16708,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -16771,6 +17005,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -17777,6 +18020,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -18065,6 +18317,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -18657,6 +18918,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -19331,6 +19601,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "schema": {
@@ -19917,6 +20196,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -20589,6 +20877,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -21445,6 +21742,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -22119,6 +22425,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "schema": {
@@ -22700,6 +23015,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -23373,6 +23697,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -24138,6 +24471,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -26522,6 +26864,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "schema": {
@@ -27017,6 +27368,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -27974,6 +28334,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "schema": {
@@ -28464,6 +28833,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -30117,6 +30495,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -30675,6 +31062,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -31349,6 +31745,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -31907,6 +32312,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -32581,6 +32995,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -33139,6 +33562,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -33813,6 +34245,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -34371,6 +34812,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -35045,6 +35495,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -35603,6 +36062,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -36737,6 +37205,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -37295,6 +37772,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -37967,6 +38453,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -38778,6 +39273,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -39313,6 +39817,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -39866,6 +40379,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -40166,6 +40688,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -40840,6 +41371,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -41128,6 +41668,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -41427,6 +41976,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -41650,6 +42208,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -42204,6 +42771,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -42885,6 +43461,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -43577,6 +44162,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -44269,6 +44863,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -44954,6 +45557,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -45512,6 +46124,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -46186,6 +46807,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -46486,6 +47116,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -47171,6 +47810,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -47720,6 +48368,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -48273,6 +48930,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -48824,6 +49490,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -49373,6 +50048,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -49933,6 +50617,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -51297,6 +51990,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -51846,6 +52548,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -52399,6 +53110,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -52950,6 +53670,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -53499,6 +54228,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -54059,6 +54797,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -55423,6 +56170,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -55716,6 +56472,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -56007,6 +56772,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -56567,6 +57341,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -57931,6 +58714,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -58483,6 +59275,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -59157,6 +59958,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -59457,6 +60267,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -59680,6 +60499,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -60231,6 +61059,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -60780,6 +61617,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -61055,6 +61901,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -61337,6 +62192,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -61615,6 +62479,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -62180,6 +63053,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -62464,6 +63346,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -62754,6 +63645,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -62967,6 +63867,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -63250,6 +64159,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {
@@ -63463,6 +64381,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -63746,6 +64673,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -64037,6 +64973,15 @@
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
           },
           {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -64318,6 +65263,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -64611,6 +65565,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           },
           {
             "name": "page",
@@ -65196,6 +66159,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of fields to include in the response. Supports dot paths into nested objects/arrays (e.g., 'ticket_key,title,reporter_user.email,attachments.file_name')."
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
           }
         ],
         "responses": {

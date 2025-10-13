@@ -180,6 +180,17 @@ function buildReferenceMd(doc) {
   }
   md.push('This section is generated from the OpenAPI spec (src/docs/openapi.json).');
   md.push('');
+  // Usage notes section to explain nested GET and shaping controls
+  md.push('## Usage notes');
+  md.push('');
+  md.push('- All GET endpoints return enriched, nested objects by default (related resources are joined for you).');
+  md.push('- Shape the response with optional query params:');
+  md.push('  - `fields`: comma-separated list of fields to include. Supports dot paths, e.g., `fields=ticket_key,title,reporter_user.email,status.name`.');
+  md.push('  - `expand`: comma-separated nested relations to expand, e.g., `expand=assigned_agent,reporter_user,roles,roles.permissions`.');
+  md.push('  - `select`: bracket syntax for advanced shaping, e.g., `select=tickets[id,title,reporter_user[id,email],assigned_agent[id,full_name],attachments[id,file_name]]`.');
+  md.push('- Pagination params (where applicable): `page`, `pageSize`. Search filter: `q`.');
+  md.push('- Write endpoints (POST/PUT) support nested bodies where documented (e.g., tickets.notes/attachments, users.roles/tier/support_groups, roles.permissions).');
+  md.push('');
   md.push('Tags index:');
   for (const tag of sortedTags) {
     const anchor = tag.toLowerCase().replace(/[^a-z0-9]+/g, '-');

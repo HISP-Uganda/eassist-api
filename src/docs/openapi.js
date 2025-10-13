@@ -117,6 +117,17 @@ function fieldsParam() {
   };
 }
 
+function expandParam() {
+  return {
+    name: "expand",
+    in: "query",
+    required: false,
+    schema: { type: "string" },
+    description:
+      "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+  };
+}
+
 // Utility: merge parameters arrays by unique key (name+in); prefer override entries
 function mergeParams(base = [], override = []) {
   const key = (p) => `${p.in}:${p.name}`;
@@ -1060,7 +1071,7 @@ export default function buildOpenApi(app) {
 
       if (method === "get") {
         // Always include fields param for GET
-        op.parameters = [...op.parameters, fieldsParam()];
+        op.parameters = [...op.parameters, fieldsParam(), expandParam()];
         // Include pagination/search only for collection-like endpoints (no path params)
         if (pathParamNames.length === 0) {
           op.parameters = mergeParams(op.parameters, listQueryParams());
