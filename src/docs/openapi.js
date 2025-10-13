@@ -302,7 +302,11 @@ const OVERRIDES = {
       { name: "is_internal", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Filter internal vs public notes" },
       { name: "q", in: "query", schema: { type: "string" }, description: "Search body contains" }
     ], description: "List notes for a ticket.", summary: "List ticket notes" },
-    post: { requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["body"], properties: { body: { type: "string" }, is_internal: { type: "boolean", default: false } } } } } }, description: "Add a note to a ticket.", summary: "Create ticket note" }
+    post: {
+      summary: "Add notes (array)",
+      description: "Add one or more notes to the ticket. Body must be an array of note objects.",
+      requestBody: { required: true, content: { "application/json": { schema: { type: "array", items: { type: "object", required: ["body"], properties: { body: { type: "string" }, is_internal: { type: "boolean" }, user_id: { type: "string", nullable: true } } } } , example: [ { body: "Initial triage", is_internal: true }, { body: "Customer updated" } ] } } }
+    }
   },
   "/api/tickets/:id/attachments": {
     get: { parameters: [
@@ -311,14 +315,11 @@ const OVERRIDES = {
       { name: "file_type", in: "query", schema: { type: "string" } },
       { name: "q", in: "query", schema: { type: "string" }, description: "Search file_name contains" }
     ], description: "List attachments for a ticket.", summary: "List ticket attachments" },
-    post: { requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["file_name","file_type","file_size_bytes","storage_path"], properties: { file_name: { type: "string" }, file_type: { type: "string" }, file_size_bytes: { type: "integer" }, storage_path: { type: "string" } } } } } }, description: "Add an attachment record for a ticket.", summary: "Create ticket attachment" }
-  },
-  "/api/tickets/:id/events": {
-    get: { parameters: [
-      { name: "page", in: "query", schema: { type: "integer" } },
-      { name: "pageSize", in: "query", schema: { type: "integer", maximum: 100 } },
-      { name: "event_type", in: "query", schema: { type: "string" } }
-    ], description: "List events for a ticket.", summary: "List ticket events" }
+    post: {
+      summary: "Add attachments (array)",
+      description: "Add one or more attachments to the ticket. Body must be an array of attachment objects.",
+      requestBody: { required: true, content: { "application/json": { schema: { type: "array", items: { type: "object", required: ["file_name","file_type","file_size_bytes","storage_path"], properties: { file_name: { type: "string" }, file_type: { type: "string" }, file_size_bytes: { type: "integer" }, storage_path: { type: "string" }, uploaded_by: { type: "string", nullable: true } } } } , example: [ { file_name: "log.txt", file_type: "text/plain", file_size_bytes: 1234, storage_path: "/store/log.txt" } ] } } }
+    }
   },
   "/api/tickets/:id/watchers": {
     get: { parameters: [
@@ -326,7 +327,11 @@ const OVERRIDES = {
       { name: "pageSize", in: "query", schema: { type: "integer", maximum: 100 } },
       { name: "notify", in: "query", schema: { type: "string", enum: ["true","false"] } }
     ], description: "List ticket watchers for a ticket.", summary: "List ticket watchers" },
-    post: { requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { user_id: { type: "string", nullable: true }, email: { type: "string", format: "email", nullable: true }, notify: { type: "boolean", default: true } }, anyOf: [ { required: ["user_id"] }, { required: ["email"] } ] } } } }, description: "Add a watcher to a ticket.", summary: "Create ticket watcher" }
+    post: {
+      summary: "Add watchers (array)",
+      description: "Add one or more watchers to the ticket. Body must be an array of watcher objects (each with user_id or email).",
+      requestBody: { required: true, content: { "application/json": { schema: { type: "array", items: { type: "object", properties: { user_id: { type: "string", nullable: true }, email: { type: "string", format: "email", nullable: true }, notify: { type: "boolean", default: true } }, anyOf: [ { required: ["user_id"] }, { required: ["email"] } ] } } , example: [ { email: "watcher@domain.test", notify: true }, { user_id: "00000000-0000-0000-0000-000000000001" } ] } } }
+    }
   },
   // Top-level tickets sub-resources filters
   "/api/tickets/notes": { get: { parameters: [
@@ -338,7 +343,7 @@ const OVERRIDES = {
     { name: "q", in: "query", schema: { type: "string" } },
     { name: "created_from", in: "query", schema: { type: "string", format: "date-time" } },
     { name: "created_to", in: "query", schema: { type: "string", format: "date-time" } }
-  ] , description: "List notes across tickets.", summary: "List notes" }, post: { requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["ticket_id","body"], properties: { ticket_id: { type: "string" }, user_id: { type: "string", nullable: true }, body: { type: "string" }, is_internal: { type: "boolean", default: false } } } } } }, description: "Create a note for a ticket.", summary: "Create note" } },
+  ] , description: "List notes across tickets.", summary: "List notes" }, post: { summary: "Create notes (array)", description: "Create one or more notes across tickets. Body must be an array of note objects.", requestBody: { required: true, content: { "application/json": { schema: { type: "array", items: { type: "object", required: ["ticket_id","body"], properties: { ticket_id: { type: "string" }, user_id: { type: "string", nullable: true }, body: { type: "string" }, is_internal: { type: "boolean", default: false } } } } , example: [ { ticket_id: "00000000-0000-0000-0000-000000000123", body: "Note A" }, { ticket_id: "00000000-0000-0000-0000-000000000124", body: "Note B", is_internal: true } ] } } } } },
   "/api/tickets/attachments": { get: { parameters: [
     { name: "page", in: "query", schema: { type: "integer" } },
     { name: "pageSize", in: "query", schema: { type: "integer" } },
@@ -348,17 +353,7 @@ const OVERRIDES = {
     { name: "q", in: "query", schema: { type: "string" } },
     { name: "uploaded_from", in: "query", schema: { type: "string", format: "date-time" } },
     { name: "uploaded_to", in: "query", schema: { type: "string", format: "date-time" } }
-  ] , description: "List attachments across tickets.", summary: "List attachments" } },
-  "/api/tickets/events": { get: { parameters: [
-    { name: "page", in: "query", schema: { type: "integer" } },
-    { name: "pageSize", in: "query", schema: { type: "integer" } },
-    { name: "ticket_id", in: "query", schema: { type: "string" } },
-    { name: "event_type", in: "query", schema: { type: "string" } },
-    { name: "actor_user_id", in: "query", schema: { type: "string" } },
-    { name: "q", in: "query", schema: { type: "string" } },
-    { name: "occurred_from", in: "query", schema: { type: "string", format: "date-time" } },
-    { name: "occurred_to", in: "query", schema: { type: "string", format: "date-time" } }
-  ] , description: "List ticket events across system.", summary: "List ticket events" } },
+  ] , description: "List attachments across tickets.", summary: "List attachments" }, post: { summary: "Create attachments (array)", description: "Create one or more attachments across tickets. Body must be an array of attachment objects.", requestBody: { required: true, content: { "application/json": { schema: { type: "array", items: { type: "object", required: ["ticket_id","file_name","file_type","file_size_bytes","storage_path"], properties: { ticket_id: { type: "string" }, file_name: { type: "string" }, file_type: { type: "string" }, file_size_bytes: { type: "integer" }, storage_path: { type: "string" }, uploaded_by: { type: "string", nullable: true } } } } , example: [ { ticket_id: "00000000-0000-0000-0000-000000000123", file_name: "a.txt", file_type: "text/plain", file_size_bytes: 100, storage_path: "/store/a.txt" } ] } } } } },
   "/api/tickets/watchers": { get: { parameters: [
     { name: "page", in: "query", schema: { type: "integer" } },
     { name: "pageSize", in: "query", schema: { type: "integer" } },
@@ -366,8 +361,7 @@ const OVERRIDES = {
     { name: "user_id", in: "query", schema: { type: "string" } },
     { name: "email", in: "query", schema: { type: "string", format: "email" } },
     { name: "notify", in: "query", schema: { type: "string", enum: ["true","false"] } }
-  ] , description: "List ticket watchers across system.", summary: "List ticket watchers" } },
-
+  ] , description: "List ticket watchers across system.", summary: "List ticket watchers" }, post: { summary: "Create watchers (array)", description: "Create one or more watchers across tickets. Body must be an array of watcher objects (each with ticket_id and either user_id or email).", requestBody: { required: true, content: { "application/json": { schema: { type: "array", items: { type: "object", properties: { ticket_id: { type: "string" }, user_id: { type: "string", nullable: true }, email: { type: "string", format: "email", nullable: true }, notify: { type: "boolean", default: true } , }, anyOf: [ { required: ["ticket_id","user_id"] }, { required: ["ticket_id","email"] } ] } } , example: [ { ticket_id: "00000000-0000-0000-0000-000000000123", email: "watch@domain.test" } ] } } } } },
   // New: ID endpoints for notes/attachments/watchers with PUT/DELETE specifics
   "/api/tickets/notes/:id": {
     put: {
@@ -453,6 +447,14 @@ const OVERRIDES = {
                 }
               },
               additionalProperties: false
+            },
+            example: {
+              email: 'new.agent@example.com',
+              full_name: 'New Agent',
+              is_active: true,
+              roles: ['agent'],
+              tiers: [ { name: 'Tier 1' } ],
+              support_groups: [ { name: 'Service Desk' }, 2 ]
             }
           }
         }
@@ -493,7 +495,72 @@ const OVERRIDES = {
                 }
               },
               additionalProperties: false
+            },
+            example: {
+              full_name: 'Agent Updated',
+              roles: ['agent', 'kb_editor'],
+              tiers: [1],
+              support_groups: [1, { name: 'Escalations' }]
             }
+          }
+        }
+      }
+    }
+  },
+  // New: document array support for tiers/groups subresources on users
+  "/api/system/users/:id/tiers": {
+    post: {
+      summary: "Set user tier (supports array)",
+      description: "Set or replace the user's single support tier. Accepts either a single tier id/name or a 'tiers' array; when an array is provided, only the first element is used.",
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                tier_id: { type: 'integer', nullable: true },
+                tier: { type: 'string', nullable: true },
+                tier_name: { type: 'string', nullable: true },
+                tiers: {
+                  type: 'array', maxItems: 1,
+                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' } } } ] },
+                  description: 'Array form; only the first item is used.'
+                }
+              },
+              anyOf: [ { required: ['tier_id'] }, { required: ['tier'] }, { required: ['tier_name'] }, { required: ['tiers'] } ],
+              additionalProperties: false
+            },
+            example: { tiers: [ { name: 'Tier 2' } ] }
+          }
+        }
+      }
+    }
+  },
+  "/api/system/users/:id/support-groups": {
+    post: {
+      summary: "Add user to support groups (supports array)",
+      description: "Add the user to one or more support groups. Accepts a single group id/name or a 'support_groups' array.",
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                group_id: { type: 'integer', nullable: true },
+                group: { type: 'string', nullable: true },
+                group_name: { type: 'string', nullable: true },
+                support_groups: {
+                  type: 'array',
+                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' } } } ] },
+                  description: 'Array of groups to add.'
+                }
+              },
+              anyOf: [ { required: ['group_id'] }, { required: ['group'] }, { required: ['group_name'] }, { required: ['support_groups'] } ],
+              additionalProperties: false
+            },
+            example: { support_groups: [ { name: 'Service Desk' }, 3 ] }
           }
         }
       }
@@ -585,7 +652,20 @@ function buildCurlExamples(path, method = "get", isPublic = false) {
   const url = `http://localhost:8080${path}`;
   const m = method.toUpperCase();
   const needsBody = ["POST", "PUT", "PATCH"].includes(m);
-  const data = needsBody ? " -H 'Content-Type: application/json' -d '{}'" : "";
+  // Smart example bodies for common user endpoints
+  let bodyObj = null;
+  if (needsBody) {
+    if (path === '/api/system/users' && m === 'POST') {
+      bodyObj = { email: 'agent1@example.com', full_name: 'Agent One', roles: ['agent'], tiers: [ { name: 'Tier 1' } ], support_groups: [ { name: 'Service Desk' } ] };
+    } else if (path.match(/^\/api\/system\/users\/\{id\}$/) && m === 'PUT') {
+      bodyObj = { full_name: 'Agent One Updated', roles: ['agent','kb_editor'], tiers: [1], support_groups: [1, { name: 'Escalations' }] };
+    } else if (path.match(/^\/api\/system\/users\/\{id\}\/tiers$/) && m === 'POST') {
+      bodyObj = { tiers: [ { name: 'Tier 2' } ] };
+    } else if (path.match(/^\/api\/system\/users\/\{id\}\/support-groups$/) && m === 'POST') {
+      bodyObj = { support_groups: [ { name: 'Service Desk' }, 3 ] };
+    }
+  }
+  const data = needsBody ? ` -H 'Content-Type: application/json' -d '${JSON.stringify(bodyObj || {})}'` : "";
   const base = `curl -s -X ${m} '${url}'`;
   const bearerCurl = `${base} -H 'Authorization: Bearer $ACCESS_TOKEN'${data}`;
   const basicCurl = `${base} -u 'user@example.com:password'${data}`;
@@ -720,22 +800,22 @@ function examplesForStatus(code, errExamples) {
   if (code === "401") return pick(["unauthorized"]);
   if (code === "403") return pick(["forbidden"]);
   if (code === "404") return pick(["notFound"]);
-  return pick(["unexpected"]);
+  if (code === "500") return pick(["unexpected"]);
+  return undefined;
 }
 
 export default function buildOpenApi(app) {
-  const endpoints = listEndpoints(app) || [];
-  const apiEndpoints = endpoints.filter(
-    (e) => e.path && e.path.startsWith("/api")
-  );
+  const apiEndpoints = listEndpoints(app);
   const paths = {};
   const tagsSet = new Set();
+
+  // Components
   const components = {
     securitySchemes: {
       bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
       basicAuth: { type: "http", scheme: "basic" },
       apiKeyAuth: { type: "apiKey", in: "header", name: "X-API-Key" },
-      cookieAuth: { type: "apiKey", in: "cookie", name: "access_token" },
+      cookieAuth: { type: "apiKey", in: "cookie", name: "uid" },
     },
     schemas: {
       // Generic error envelope used across the API
@@ -772,7 +852,9 @@ export default function buildOpenApi(app) {
           is_active: { type: "boolean" },
           created_at: { type: "string", format: "date-time" },
           updated_at: { type: "string", format: "date-time", nullable: true },
-          roles: { type: "array", items: { type: "string" } },
+          roles: { type: "array", items: { $ref: "#/components/schemas/Role" }, description: "Assigned roles; include permissions when expanded via 'expand=roles.permissions'" },
+          tiers: { type: "array", items: { $ref: "#/components/schemas/AgentTier" }, description: "User's support tier memberships (max 1)." },
+          support_groups: { type: "array", items: { $ref: "#/components/schemas/AgentGroup" }, description: "User's support group memberships." },
         },
       },
 
@@ -859,85 +941,39 @@ export default function buildOpenApi(app) {
       // Workflows
       WorkflowRule: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, enabled: { type: "boolean" }, trigger: { type: "string" }, actions: { type: "array", items: { type: "object", additionalProperties: true } } } },
 
-      // Tickets and attachments schemas with audit fields
-      TicketAttachment: {
-        type: "object",
-        required: ["id", "ticket_id", "file_name", "file_type", "file_size_bytes", "storage_path"],
-        properties: {
-          id: { type: "string" },
-          ticket_id: { type: "string" },
-          file_name: { type: "string" },
-          file_type: { type: "string" },
-          file_size_bytes: { type: "integer" },
-          storage_path: { type: "string" },
-          uploaded_by: { type: "string", nullable: true },
-          uploaded_at: { type: "string", format: "date-time" },
-        },
-      },
+      // Tickets composite/list schemas
       TicketNote: {
         type: "object",
-        required: ["id", "ticket_id", "body"],
-        properties: {
-          id: { type: "string" },
-          ticket_id: { type: "string" },
-          user_id: { type: "string", nullable: true },
-          body: { type: "string" },
-          is_internal: { type: "boolean" },
-          created_at: { type: "string", format: "date-time" },
-        },
+        properties: { id: { type: "string" }, ticket_id: { type: "string" }, user_id: { type: "string" }, body: { type: "string" }, is_internal: { type: "boolean" }, created_at: { type: "string", format: "date-time" } }
       },
-      TicketEvent: {
+      TicketAttachment: {
         type: "object",
-        required: ["id", "ticket_id", "event_type"],
-        properties: {
-          id: { type: "string" },
-          ticket_id: { type: "string" },
-          event_type: { type: "string" },
-          actor_user_id: { type: "string", nullable: true },
-          details: { type: "object", additionalProperties: true, nullable: true },
-          occurred_at: { type: "string", format: "date-time" }
-        }
+        properties: { id: { type: "string" }, ticket_id: { type: "string" }, file_name: { type: "string" }, file_type: { type: "string" }, file_size_bytes: { type: "integer" }, storage_path: { type: "string" }, uploaded_by: { type: "string" }, uploaded_at: { type: "string", format: "date-time" } }
       },
       TicketWatcher: {
         type: "object",
-        required: ["id", "ticket_id"],
-        properties: {
-          id: { type: "string" },
-          ticket_id: { type: "string" },
-          user_id: { type: "string", nullable: true },
-          email: { type: "string", format: "email", nullable: true },
-          notify: { type: "boolean" }
-        }
+        properties: { id: { type: "string" }, ticket_id: { type: "string" }, user_id: { type: "string", nullable: true }, email: { type: "string", format: "email", nullable: true }, notify: { type: "boolean" } }
       },
       Ticket: {
         type: "object",
-        required: ["id", "ticket_key", "title"],
         properties: {
           id: { type: "string" },
           ticket_key: { type: "string" },
           title: { type: "string" },
-          description: { type: "string", nullable: true },
+          description: { type: "string" },
           reporter_user_id: { type: "string", nullable: true },
-          reporter_email: { type: "string", format: "email", nullable: true },
-          full_name: { type: "string", nullable: true },
-          phone_number: { type: "string", nullable: true },
-          system_id: { type: "integer", nullable: true },
-          module_id: { type: "integer", nullable: true },
-          category_id: { type: "integer", nullable: true },
-          status_id: { type: "integer", nullable: true },
-          priority_id: { type: "integer", nullable: true },
-          severity_id: { type: "integer", nullable: true },
-          source_id: { type: "integer", nullable: true },
           assigned_agent_id: { type: "string", nullable: true },
-          group_id: { type: "integer", nullable: true },
-          tier_id: { type: "integer", nullable: true },
-          claimed_by: { type: "string", nullable: true },
-          claimed_at: { type: "string", format: "date-time", nullable: true },
-          reopen_count: { type: "integer", nullable: true },
-          last_public_update_at: { type: "string", format: "date-time", nullable: true },
+          status_id: { type: "string" },
+          priority_id: { type: "string" },
+          severity_id: { type: "string" },
+          system_id: { type: "string" },
+          module_id: { type: "string" },
+          category_id: { type: "string" },
+          group_id: { type: "string" },
+          tier_id: { type: "string" },
           created_at: { type: "string", format: "date-time" },
           updated_at: { type: "string", format: "date-time", nullable: true },
-          attachments_count: { type: "integer", nullable: true },
+          notes: { type: "array", items: { $ref: "#/components/schemas/TicketNote" } },
           attachments: { type: "array", items: { $ref: "#/components/schemas/TicketAttachment" } },
           // Example nested objects when using listDetailed/readDetailed
           reporter_user: { type: "object", nullable: true, additionalProperties: true },
@@ -1062,99 +1098,29 @@ export default function buildOpenApi(app) {
             description: "Not Found",
             content: { "application/json": { schema: errSchema } },
           },
-          default: {
-            description: "Unexpected Error",
+          500: {
+            description: "Internal Server Error",
             content: { "application/json": { schema: errSchema } },
           },
-        }
+        },
       };
 
-      if (method === "get") {
-        // Always include fields param for GET
-        op.parameters = [...op.parameters, fieldsParam(), expandParam()];
-        // Include pagination/search only for collection-like endpoints (no path params)
-        if (pathParamNames.length === 0) {
-          op.parameters = mergeParams(op.parameters, listQueryParams());
-        }
+      // Query params for lists
+      if (method === "get" && !e.path.match(/:\w+/)) {
+        op.parameters = mergeParams(op.parameters, listQueryParams());
+        // Also allow shaping controls
+        op.parameters = mergeParams(op.parameters, [fieldsParam(), expandParam()]);
+      } else {
+        // shaping controls still allowed on single GETs
+        if (method === 'get') op.parameters = mergeParams(op.parameters, [fieldsParam(), expandParam()]);
       }
+
+      // Guess response schema for success
+      op.responses[200].content["application/json"].schema = guessResponseSchema(oaPath, method);
+
+      // Default request bodies for POST/PUT on common resources
       if (["post", "put", "patch"].includes(method)) {
-        op.requestBody = op.requestBody || {
-          required: true,
-          content: {
-            "application/json": {
-              schema: { type: "object", additionalProperties: true },
-              example: { sample: "value" },
-            },
-          },
-        };
-      }
-      // Apply overrides
-      op = mergeOverride(op, e.path, method);
-
-      // Ensure every operation explicitly documents whether a request payload is expected
-      if (!op.requestBody) {
-        op.requestBody = { required: false };
-      }
-
-      // Attach a guessed concrete 200/201 response schema where possible (improves developer usability)
-      try {
-        const guessed = guessResponseSchema(oaPath, method);
-        // prefer 200, then 201, then any 2xx response
-        const successCodes = ["200", "201", ...Object.keys(op.responses || {}).filter((c) => /^2\d\d$/.test(c))];
-        let targetCode = successCodes.find((c) => op.responses && op.responses[c] && op.responses[c].content && op.responses[c].content['application/json']);
-        if (!targetCode) {
-          // fallback: find first 2xx with content
-          targetCode = Object.keys(op.responses || {}).find((c) => /^2\d\d$/.test(c));
-        }
-        if (targetCode && op.responses && op.responses[targetCode] && op.responses[targetCode].content && op.responses[targetCode].content['application/json']) {
-          op.responses[targetCode].content['application/json'].schema = guessed;
-        }
-      } catch (err) {
-        // ignore guessing failures and leave generic schema
-      }
-
-      // Heuristics to provide requestBody schemas for common operations
-      if (["post", "put", "patch"].includes(method)) {
-        // Auth login
-        if (e.path === '/api/auth/login') {
-          op.requestBody = {
-            required: true,
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/AuthLoginRequest' } } },
-          };
-        }
-        // Create ticket (public or authenticated)
-        else if (e.path.startsWith('/api/public/tickets') || e.path === '/api/tickets') {
-          op.requestBody = {
-            required: true,
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  required: ['title','description'],
-                  properties: {
-                    title: { type: 'string' },
-                    description: { type: 'string' },
-                    email: { type: 'string', format: 'email', description: 'Alias for reporter_email (public)' },
-                    reporter_email: { type: 'string', format: 'email' },
-                    full_name: { type: 'string' },
-                    phone_number: { type: 'string' },
-                    reporter_user_id: { type: 'string', description: 'Authenticated user id (server may infer)' },
-                    system_id: { type: 'string' },
-                    module_id: { type: 'string' },
-                    category_id: { type: 'string' },
-                    priority_id: { type: 'string' },
-                    severity_id: { type: 'string' },
-                    source_code: { type: 'string', description: 'Explicit source code/name; defaults to Self Service (public) or Agent Reporting (authenticated). Common values: agent_reporting, phone_call, email, verbal, social_media, community_of_practice.' }
-                  },
-                  additionalProperties: false
-                },
-                example: { title: 'Printer jam', description: 'Paper jam after 3 pages', email: 'user@domain.test', source_code: 'self_service' }
-              }
-            }
-          };
-        }
-        // Rotate or create API keys
-        else if (e.path.startsWith('/api/tokens/api-keys')) {
+        if (e.path.includes('/tokens/api-keys')) {
           op.requestBody = {
             required: true,
             content: {
@@ -1224,84 +1190,41 @@ export default function buildOpenApi(app) {
         else if (e.path.includes('/tickets/watchers') || e.path.includes('/watchers')) {
           op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/TicketWatcher' } } } };
         }
-        else if (e.path.includes('/tickets/events') || e.path.includes('/events')) {
-          op.requestBody = { required: true, content: { 'application/json': { schema: { type: 'object', additionalProperties: true } } } };
-        }
-        // Workflows and agents
-        else if (e.path.includes('/workflows')) {
-          op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/WorkflowRule' } } } };
-        }
-        else if (e.path.includes('/agents')) {
-          op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/AgentGroup' } } } };
+      }
+
+      // Merge manual overrides (wins for requestBody, etc.)
+      op = mergeOverride(op, oaPath, method);
+
+      // Error examples tailored per path
+      const errExamples = errorExamples(oaPath, method);
+      for (const code of Object.keys(op.responses)) {
+        if (code === '200') continue;
+        const ex = examplesForStatus(code, errExamples);
+        if (ex) {
+          if (!op.responses[code].content) op.responses[code].content = {};
+          op.responses[code].content['application/json'] = op.responses[code].content['application/json'] || {};
+          op.responses[code].content['application/json'].examples = ex;
         }
       }
 
-      // If this is a POST and no explicit 201 response was provided, promote a generic 200 -> 201 (Created)
-      if (method === 'post') {
-        if (op.responses && op.responses['200'] && !op.responses['201']) {
-          op.responses['201'] = { ...op.responses['200'], description: op.responses['200'].description || 'Created' };
-          delete op.responses['200'];
-        } else if (!op.responses || (!op.responses['200'] && !op.responses['201'])) {
-          op.responses = op.responses || {};
-          op.responses['201'] = { description: 'Created', content: { 'application/json': { schema: { type: 'object' } } } };
-        }
-      }
-
-      // After overrides, attach tailored examples per status
-      const codes = ["400", "401", "403", "404", "default"];
-      const ex = errorExamples(expressToOpenApiPath(e.path), method);
-      for (const code of codes) {
-        const res = op.responses[code];
-        if (!res || !res.content || !res.content["application/json"]) continue;
-        const picked = examplesForStatus(
-          code === "default" ? "default" : code,
-          ex
-        );
-        if (picked) {
-          res.content["application/json"].examples = picked;
-        }
-      }
       paths[oaPath][method] = op;
     }
   }
 
-  const tags = Array.from(tagsSet)
-    .sort()
-    .map((name) => ({ name }));
+  // Tags
+  const tags = Array.from(tagsSet).map((t) => ({ name: t }));
 
   return {
     openapi: "3.0.3",
     info: {
-      title: "eAssist API",
-      version: "10.0.0",
-      description: [
-        "Auto-generated API documentation. Most endpoints accept any of the following auth methods:",
-        "",
-        "- Bearer JWT: Authorization: Bearer <access_token>",
-        "- Basic auth: Authorization: Basic base64(email:password)",
-        "- API key: X-API-Key: <raw>",
-        "- Cookie (browser): access_token, refresh_token (HttpOnly)",
-        "",
-        "Public endpoints under /api/public and /api/system/lookups do not require authentication.",
-        "Use /api/auth/login to obtain tokens, /api/resources to list endpoints, and /api/info for diagnostics.",
-        "",
-        "Errors are documented inline per operation, extending ErrorResponseBase with endpoint-appropriate details and example messages.",
-        "",
-        "Developed and maintained by HISP Uganda.",
-      ].join("\n"),
+      title: "EAssist API",
+      version: "1.0.0",
+      description:
+        "Auto-generated OpenAPI specification from Express routes."
     },
-    servers: [
-      { url: "http://localhost:8080", description: "Local server" },
-      { url: "/", description: "Relative" },
-    ],
+    servers: [{ url: "http://localhost:8080" }],
     tags,
-    components,
-    security: [
-      { bearerAuth: [] },
-      { basicAuth: [] },
-      { apiKeyAuth: [] },
-      { cookieAuth: [] },
-    ],
     paths,
+    components,
   };
 }
