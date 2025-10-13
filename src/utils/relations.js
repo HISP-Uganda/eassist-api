@@ -41,14 +41,6 @@ const SPECIFIC_FK_MAP = {
   'videos.category_id': { table: 'video_categories', key: 'category', defaults: ['id','name'], allowed: ['id','name'] },
 };
 
-function parseAttrs(req, qKey, allowed){
-  const raw = req?.query?.[qKey] ?? null;
-  if (raw === null || raw === undefined) return null; // signal to use full to_jsonb by default
-  const parts = String(raw).split(',').map(s=>s.trim()).filter(Boolean);
-  if (!parts.length) return allowed; // empty provided -> fall back to allowed
-  return parts.filter(p=>allowed.includes(p));
-}
-
 async function tablesExist(tables){
   const { rows } = await pool.query(`SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name = ANY($1)`, [tables]);
   return new Set((rows||[]).map(r=>r.table_name));
@@ -326,19 +318,11 @@ export async function listDetailed(table, req, order = '1 DESC', options = {}){
       selectParts.push(`NULL::jsonb AS ${rel.key}`);
       continue;
     }
-    const qKey = `with_attrs_${rel.key}`;
-    const custom = parseAttrs(req, qKey, rel.allowed);
     const alias = rel.table.replace(/[^a-z0-9]/g,'_').slice(0,3);
-    // ensure alias unique by appending index
     const idx = joinParts.length + 1;
     const aAlias = `${alias}${idx}`;
-    if (custom && custom.length) {
-      const pairs = custom.map(a => `'${a}', ${aAlias}.${a}`);
-      selectParts.push(`jsonb_build_object(${pairs.join(', ')}) AS ${rel.key}`);
-    } else {
-      // default: include the full related row as JSON (all available attributes)
-      selectParts.push(`to_jsonb(${aAlias}) AS ${rel.key}`);
-    }
+    // Always include full related row; bracket-select/fields will sculpt the response
+    selectParts.push(`to_jsonb(${aAlias}) AS ${rel.key}`);
     joinParts.push(`LEFT JOIN ${rel.table} ${aAlias} ON t.${rel.col} = ${aAlias}.id`);
   }
 
@@ -409,17 +393,11 @@ export async function readDetailed(table, idCol, id, req){
       selectParts.push(`NULL::jsonb AS ${rel.key}`);
       continue;
     }
-    const qKey = `with_attrs_${rel.key}`;
-    const custom = parseAttrs(req, qKey, rel.allowed);
     const alias = rel.table.replace(/[^a-z0-9]/g,'_').slice(0,3);
     const idx = joinParts.length + 1;
     const aAlias = `${alias}${idx}`;
-    if (custom && custom.length) {
-      const pairs = custom.map(a => `'${a}', ${aAlias}.${a}`);
-      selectParts.push(`jsonb_build_object(${pairs.join(', ')}) AS ${rel.key}`);
-    } else {
-      selectParts.push(`to_jsonb(${aAlias}) AS ${rel.key}`);
-    }
+    // Always include full related row; bracket-select/fields will sculpt the response
+    selectParts.push(`to_jsonb(${aAlias}) AS ${rel.key}`);
     joinParts.push(`LEFT JOIN ${rel.table} ${aAlias} ON t.${rel.col} = ${aAlias}.id`);
   }
   const sql = `SELECT ${selectParts.join(', ')} FROM ${table} t ${joinParts.join(' ')} WHERE t.${idCol} = $1 LIMIT 1`;

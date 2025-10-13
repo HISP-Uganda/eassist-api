@@ -18,9 +18,9 @@ Production-grade Express + PostgreSQL API for the eAssist Helpdesk platform.
 - Database and migrations
 - Run the API
 - Auth and security
-- Public endpoints                                                                                                               
+- Public endpoints                                                                                                                
 - Tickets domain (data model, nested payloads, attachments, notes, events)
-- Field selection (fields=, with_attrs_*)
+- Field selection (fields=) and bracket select (select=...)
 - OpenAPI docs
 - Scripts (maintenance and dev)
 - Troubleshooting
@@ -256,15 +256,29 @@ Examples:
 - Single ticket with selected nested fields and attachments’ names:
   - `GET /api/tickets/:id?fields=ticket_key,status.code,priority.code,severity.code,attachments.file_name`
 
-You can also control attributes included in each nested relation via `with_attrs_<relation>=…`:
-- `with_attrs_reporter_user=id,email`
-- `with_attrs_system=id,name`
-- `with_attrs_status=id,code`
+### Bracket-based select syntax (preferred for nested shaping)
 
-Combine both for optimal performance:
-```
-GET /api/tickets?fields=ticket_key,reporter_user,system&with_attrs_reporter_user=id,email&with_attrs_system=id,name
-```
+As a shorthand that also declares expansions, use `select=` with a bracketed structure:
+
+- `GET /api/system/users?select=users[id,email,full_name,roles[id,name,permissions[code,name]]]`
+
+This is equivalent to:
+- `expand=roles,roles.permissions`
+- `fields=id,email,full_name,roles.id,roles.name,roles.permissions.code,roles.permissions.name`
+
+The top-level identifier (e.g., `users[...]`) is optional; `select=[id,email,roles[id]]` also works.
+
+Examples replacing previous with_attrs_* usage:
+- Videos:
+  - `GET /api/knowledge/videos?select=items[id,title,category[id,name],system_category[id,name]]`
+- Inbox emails:
+  - `GET /api/system/inbox/emails?select=items[id,subject,created_ticket[id,title]]`
+- KB tag map:
+  - `GET /api/knowledge/kb/tag-map?select=items[id,article[id,title],tag[id,name]]`
+
+Notes:
+- Shaping of nested objects is now done via `select=` (or `fields=` + `expand=`); `with_attrs_*` query params are no longer supported.
+- Sensitive fields like password hashes remain excluded by design.
 
 ### Nested expansion for users (roles and permissions)
 
@@ -283,19 +297,6 @@ Also works on a single user:
 Notes:
 - Sensitive fields like `password_hash` are always stripped.
 - If `roles.permissions` is requested but a role has no permissions, `permissions` will be an empty array.
-
-### Bracket-based select syntax (compact nesting)
-
-As a shorthand for `expand` + `fields`, use `select=` with a bracketed structure:
-
-- `GET /api/system/users?select=users[id,email,full_name,roles[id,name,permissions[code,name]]]`
-
-This is equivalent to:
-- `expand=roles,roles.permissions`
-- `fields=id,email,full_name,roles.id,roles.name,roles.permissions.code,roles.permissions.name`
-
-Tip:
-- The top-level identifier (e.g., `users[...]`) is optional; `select=[id,email,roles[id]]` also works.
 
 ---
 
@@ -3379,5 +3380,3 @@ curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tokens/api-key
 curl -H 'Authorization: Bearer {TOKEN}' http://localhost:8080/api/tokens/api-keys/:id/rotate
 ```
 
-
-<!-- API_REFERENCE_END -->
