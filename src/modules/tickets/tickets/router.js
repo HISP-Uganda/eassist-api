@@ -179,6 +179,30 @@ r.post(
       // Remove unsupported field system_category_id (belongs to other tables)
       if (Object.prototype.hasOwnProperty.call(body, 'system_category_id')) delete body.system_category_id;
 
+      // Resolve source_id if not provided: prefer explicit source_code, otherwise default to Agent Service for authenticated creation
+      if (body.source_id === undefined || body.source_id === null) {
+        try {
+          let srcRow = null;
+          const explicit = body.source_code || body.source || null;
+          if (explicit && String(explicit).trim()) {
+            const code = String(explicit).trim().toLowerCase();
+            const q = await pool.query(`SELECT id FROM sources WHERE lower(code)=$1 OR lower(name)=$1 LIMIT 1`, [code]);
+            srcRow = q.rows[0] || null;
+          }
+          if (!srcRow) {
+            // Default for authenticated/internal creation
+            const candidates = ['agent_service','agent-service','agent','internal'];
+            const names = ['agent service','agent-service','internal'];
+            const q = await pool.query(
+              `SELECT id FROM sources WHERE lower(code)=ANY($1) OR lower(name)=ANY($2) LIMIT 1`,
+              [candidates, names]
+            );
+            srcRow = q.rows[0] || null;
+          }
+          if (srcRow && srcRow.id != null) body.source_id = srcRow.id;
+        } catch (_) { /* ignore */ }
+      }
+
       // Proceed with generic creator using the allow list
       const created = await create(table, body, allow);
       res.status(201).json(created);

@@ -23681,10 +23681,22 @@
                   },
                   "email": {
                     "type": "string",
+                    "format": "email",
+                    "description": "Alias for reporter_email (public)"
+                  },
+                  "reporter_email": {
+                    "type": "string",
                     "format": "email"
                   },
-                  "reporter_user_id": {
+                  "full_name": {
                     "type": "string"
+                  },
+                  "phone_number": {
+                    "type": "string"
+                  },
+                  "reporter_user_id": {
+                    "type": "string",
+                    "description": "Authenticated user id (server may infer)"
                   },
                   "system_id": {
                     "type": "string"
@@ -23700,6 +23712,10 @@
                   },
                   "severity_id": {
                     "type": "string"
+                  },
+                  "source_code": {
+                    "type": "string",
+                    "description": "Explicit source code/name; defaults to Self Service (public) or Agent Service (authenticated)"
                   }
                 },
                 "additionalProperties": false
@@ -23707,7 +23723,8 @@
               "example": {
                 "title": "Printer jam",
                 "description": "Paper jam after 3 pages",
-                "email": "user@domain.test"
+                "email": "user@domain.test",
+                "source_code": "self_service"
               }
             }
           }
@@ -26599,7 +26616,7 @@
           "tickets/:id"
         ],
         "summary": "List ticket watchers",
-        "description": "List watchers for a ticket.",
+        "description": "List ticket watchers for a ticket.",
         "security": [
           {
             "bearerAuth": []
@@ -68057,10 +68074,22 @@
                   },
                   "email": {
                     "type": "string",
+                    "format": "email",
+                    "description": "Alias for reporter_email (public)"
+                  },
+                  "reporter_email": {
+                    "type": "string",
                     "format": "email"
                   },
-                  "reporter_user_id": {
+                  "full_name": {
                     "type": "string"
+                  },
+                  "phone_number": {
+                    "type": "string"
+                  },
+                  "reporter_user_id": {
+                    "type": "string",
+                    "description": "Authenticated user id (server may infer)"
                   },
                   "system_id": {
                     "type": "string"
@@ -68076,6 +68105,10 @@
                   },
                   "severity_id": {
                     "type": "string"
+                  },
+                  "source_code": {
+                    "type": "string",
+                    "description": "Explicit source code/name; defaults to Self Service (public) or Agent Service (authenticated)"
                   }
                 },
                 "additionalProperties": false
@@ -68083,7 +68116,8 @@
               "example": {
                 "title": "Printer jam",
                 "description": "Paper jam after 3 pages",
-                "email": "user@domain.test"
+                "email": "user@domain.test",
+                "source_code": "self_service"
               }
             }
           }

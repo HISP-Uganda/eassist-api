@@ -60,6 +60,7 @@ r.get("/tickets", (req, res) => {
           title: "string",
           description: "string",
           email: "string (optional)",
+          source_code: "string (optional; defaults to Self Service)",
           system_id: "uuid (optional)",
         },
         example:
@@ -76,6 +77,35 @@ r.get("/tickets", (req, res) => {
     ],
   });
 });
+
+// Helper: resolve a source_id by explicit code/name or by candidate defaults
+async function resolveSourceId({ explicitCode, defaultCandidates = [], defaultNames = [] }) {
+  // Try explicit first if provided
+  try {
+    if (explicitCode && String(explicitCode).trim()) {
+      const code = String(explicitCode).trim().toLowerCase();
+      const q = await pool.query(
+        `SELECT id FROM sources WHERE lower(code)=$1 OR lower(name)=$1 LIMIT 1`,
+        [code]
+      );
+      if (q.rows[0]?.id != null) return q.rows[0].id;
+    }
+  } catch (_) {}
+  // Try defaults list
+  try {
+    if ((defaultCandidates?.length || 0) + (defaultNames?.length || 0)) {
+      const q = await pool.query(
+        `SELECT id FROM sources WHERE lower(code)=ANY($1) OR lower(name)=ANY($2) LIMIT 1`,
+        [
+          (defaultCandidates || []).map((s) => String(s).toLowerCase()),
+          (defaultNames || []).map((s) => String(s).toLowerCase()),
+        ]
+      );
+      if (q.rows[0]?.id != null) return q.rows[0].id;
+    }
+  } catch (_) {}
+  return undefined;
+}
 
 // Submit a ticket publicly
 r.post("/tickets", async (req, res, next) => {
@@ -106,11 +136,17 @@ r.post("/tickets", async (req, res, next) => {
         data[f] = null;
       }
     }
-    // Resolve source_id for 'web'
+
+    // Resolve source_id: explicit source_code if provided; else default to Self Service for public submissions with safe fallbacks
     try {
-      const src = await pool.query(`SELECT id FROM sources WHERE code='web' LIMIT 1`);
-      if (src.rows[0]?.id != null) data.source_id = src.rows[0].id;
-    } catch (_) { /* ignore, source_id remains undefined */ }
+      const explicit = body.source_code || body.source || null;
+      const source_id = await resolveSourceId({
+        explicitCode: explicit,
+        defaultCandidates: ["self_service", "self-service", "self", "public", "portal", "web"],
+        defaultNames: ["self service", "public", "portal", "web"],
+      });
+      if (source_id != null) data.source_id = source_id;
+    } catch (_) { /* ignore, data.source_id remains unset */ }
 
     // Allow list for public creation
     const allow = [

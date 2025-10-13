@@ -223,7 +223,7 @@ const OVERRIDES = {
       { name: "page", in: "query", schema: { type: "integer" } },
       { name: "pageSize", in: "query", schema: { type: "integer", maximum: 100 } },
       { name: "notify", in: "query", schema: { type: "string", enum: ["true","false"] } }
-    ], description: "List watchers for a ticket.", summary: "List ticket watchers" },
+    ], description: "List ticket watchers for a ticket.", summary: "List ticket watchers" },
     post: { requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { user_id: { type: "string", nullable: true }, email: { type: "string", format: "email", nullable: true }, notify: { type: "boolean", default: true } }, anyOf: [ { required: ["user_id"] }, { required: ["email"] } ] } } } }, description: "Add a watcher to a ticket.", summary: "Create ticket watcher" }
   },
   // Top-level tickets sub-resources filters
@@ -893,17 +893,21 @@ export default function buildOpenApi(app) {
                   properties: {
                     title: { type: 'string' },
                     description: { type: 'string' },
-                    email: { type: 'string', format: 'email' },
-                    reporter_user_id: { type: 'string' },
+                    email: { type: 'string', format: 'email', description: 'Alias for reporter_email (public)' },
+                    reporter_email: { type: 'string', format: 'email' },
+                    full_name: { type: 'string' },
+                    phone_number: { type: 'string' },
+                    reporter_user_id: { type: 'string', description: 'Authenticated user id (server may infer)' },
                     system_id: { type: 'string' },
                     module_id: { type: 'string' },
                     category_id: { type: 'string' },
                     priority_id: { type: 'string' },
-                    severity_id: { type: 'string' }
+                    severity_id: { type: 'string' },
+                    source_code: { type: 'string', description: 'Explicit source code/name; defaults to Self Service (public) or Agent Service (authenticated)' }
                   },
                   additionalProperties: false
                 },
-                example: { title: 'Printer jam', description: 'Paper jam after 3 pages', email: 'user@domain.test' }
+                example: { title: 'Printer jam', description: 'Paper jam after 3 pages', email: 'user@domain.test', source_code: 'self_service' }
               }
             }
           };
