@@ -429,6 +429,230 @@ const OVERRIDES = {
     }
   },
 
+  // User-facing Messages
+  "/api/messages/inbox": {
+    get: {
+      summary: "My inbox",
+      description: "List IN_APP messages for the authenticated user.",
+      parameters: [
+        { name: "unread", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Filter only unread messages when true" }
+      ],
+      responses: {
+        200: {
+          description: "Inbox list",
+          content: { 'application/json': { examples: { payload: { value: { items: [ { id: "00000000-0000-0000-0000-000000000001", channel: "IN_APP", subject: "Welcome", body: "Thanks for joining", to_user_id: "30000000-0000-0000-0000-000000000001" } ], page: 1, pageSize: 20, total: 1 } } } } }
+        }
+      }
+    }
+  },
+  "/api/messages/inbox/{id}": {
+    get: { summary: "Get inbox message", description: "Get a single IN_APP message in your inbox by id." }
+  },
+  "/api/messages/inbox/{id}/read": {
+    post: { summary: "Mark read", description: "Mark a specific IN_APP inbox message as read." }
+  },
+  "/api/messages/stream": {
+    get: {
+      summary: "Message stream (SSE)",
+      description: "Server-Sent Events stream for real-time in-app message notifications for the authenticated user.",
+      responses: {
+        200: {
+          description: "SSE stream",
+          content: {
+            'text/event-stream': {
+              schema: { type: 'string', description: 'Event stream' },
+              examples: { hello: { value: `: connected\n\n` } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/api/messages/send": {
+    post: {
+      summary: "Send in-app message",
+      description: "Send an IN_APP message to a user.",
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['to_user_id'],
+              properties: {
+                to_user_id: { type: 'string', format: 'uuid' },
+                subject: { type: 'string' },
+                body: { type: 'string' },
+                body_html: { type: 'string' },
+                template_code: { type: 'string' },
+                attachments: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    required: ['file_url'],
+                    properties: {
+                      file_url: { type: 'string' },
+                      file_name: { type: 'string' },
+                      content_type: { type: 'string' },
+                      size_bytes: { type: 'integer' }
+                    }
+                  }
+                }
+              }
+            },
+            examples: { basic: { value: { to_user_id: '30000000-0000-0000-0000-000000000001', subject: 'Hello', body: 'Welcome to eAssist', attachments: [ { file_url: 'https://files.example.com/welcome.pdf', file_name: 'welcome.pdf' } ] } } }
+          }
+        }
+      },
+      responses: { '201': { description: 'Queued IN_APP message' } },
+      // Clarify permission requirement
+      "x-permissions-any": ["system.messages.send"]
+    }
+  },
+  "/api/messages/sms/send": {
+    post: {
+      summary: "Send SMS message",
+      description: "Queue an SMS message. Requires system.messages.send permission.",
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['to_phone','body'],
+              properties: {
+                to_phone: { type: 'string' },
+                body: { type: 'string' }
+              }
+            },
+            examples: { sms: { value: { to_phone: '+15551234567', body: 'Your OTP is 123456' } } }
+          }
+        }
+      },
+      responses: { '201': { description: 'Queued SMS', content: { 'application/json': { schema: { $ref: '#/components/schemas/Message' } } } } },
+      "x-permissions-any": ["system.messages.send"]
+    }
+  },
+  "/api/messages/email/send": {
+    post: {
+      summary: "Send EMAIL message",
+      description: "Queue an EMAIL message. Requires system.messages.send permission.",
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['to_email'],
+              properties: {
+                to_email: { type: 'string' },
+                subject: { type: 'string' },
+                body: { type: 'string' }
+              }
+            },
+            examples: { email: { value: { to_email: 'user@example.com', subject: 'Hello', body: 'Welcome!' } } }
+          }
+        }
+      },
+      responses: { '201': { description: 'Queued EMAIL', content: { 'application/json': { schema: { $ref: '#/components/schemas/Message' } } } } },
+      "x-permissions-any": ["system.messages.send"]
+    }
+  },
+
+  // System: Messages
+  "/api/system/messages": {
+    get: {
+      summary: "List messages",
+      description: "List messages across channels with pagination and filtering.",
+      parameters: [
+        { name: "channel", in: "query", schema: { type: "string", enum: ["EMAIL","SMS","IN_APP","WHATSAPP","TELEGRAM"] }, description: "Filter by channel" },
+        { name: "status", in: "query", schema: { type: "string", enum: ["queued","sent","failed","read"] }, description: "Filter by status" },
+        { name: "to_user_id", in: "query", schema: { type: "string", format: "uuid" }, description: "Filter by recipient user id" },
+        { name: "to_email", in: "query", schema: { type: "string" }, description: "Filter by recipient email" },
+        { name: "to_phone", in: "query", schema: { type: "string" }, description: "Filter by recipient phone" },
+      ],
+      responses: {
+        200: { description: "List of messages", content: { 'application/json': { schema: { type: 'object', properties: { items: { type: 'array', items: { $ref: '#/components/schemas/Message' } }, page: { type: 'integer' }, pageSize: { type: 'integer' }, total: { type: 'integer' } } } } } }
+      }
+    },
+    post: {
+      summary: "Queue a message",
+      description: "Queue a message to be sent via EMAIL, SMS, IN_APP, WHATSAPP, or TELEGRAM.",
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/MessageCreate' },
+            examples: {
+              email: { value: { channel: 'EMAIL', to_user_id: '30000000-0000-0000-0000-000000000001', subject: 'Hello', body: 'Welcome!' } },
+              sms: { value: { channel: 'SMS', to_phone: '+256700000000', body: 'Your code is 1234' } },
+              inapp: { value: { channel: 'IN_APP', to_user_id: '30000000-0000-0000-0000-000000000001', body: 'New ticket assigned' } }
+            }
+          }
+        }
+      },
+      responses: { '201': { description: 'Queued message', content: { 'application/json': { schema: { $ref: '#/components/schemas/Message' } } } } }
+    }
+  },
+  "/api/system/messages/{id}": {
+    get: { summary: "Get message", description: "Get a message by id." },
+    put: {
+      summary: "Update message status",
+      description: "Update status, timestamps, or provider metadata for a message.",
+      requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/MessageUpdate' } } } },
+      responses: { '200': { description: 'Updated', content: { 'application/json': { schema: { $ref: '#/components/schemas/Message' } } } } }
+    }
+  },
+  "/api/system/messages/{id}/send": {
+    post: { summary: "Re-queue message", description: "Re-queue a message for sending; sets status=queued and scheduled_at if not set." }
+  },
+  "/api/system/messages/inbox": {
+    get: {
+      summary: "My inbox",
+      description: "List IN_APP messages for the authenticated user.",
+      parameters: [ { name: "unread", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Filter only unread messages when true" } ],
+      responses: { 200: { description: 'Inbox', content: { 'application/json': { schema: { type: 'object', properties: { items: { type: 'array', items: { $ref: '#/components/schemas/Message' } }, page: { type: 'integer' }, pageSize: { type: 'integer' }, total: { type: 'integer' } } } } } } }
+    }
+  },
+  "/api/system/messages/inbox/{id}/read": {
+    post: { summary: "Mark read", description: "Mark a specific IN_APP message as read." }
+  },
+
+  // System: Settings - Messaging providers
+  "/api/system/settings/messaging/providers": {
+    get: {
+      summary: "List message providers",
+      description: "List configured messaging providers. Filter by channel with ?channel=EMAIL|SMS|WHATSAPP|TELEGRAM.",
+      parameters: [ { name: "channel", in: "query", schema: { type: "string", enum: ["EMAIL","SMS","WHATSAPP","TELEGRAM"] } } ],
+      responses: { 200: { description: "Providers", content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/MessageProvider' } } } } } }
+    },
+    post: {
+      summary: "Create provider",
+      description: "Create a messaging provider with optional is_default (enforces single default per channel).",
+      requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/MessageProviderCreate' }, examples: { sms: { value: { name: 'Twilio', channel: 'SMS', is_active: true, is_default: true, config: { account_sid: 'AC..', auth_token: '***', from: '+15551234567' } } } } } } },
+      responses: { 201: { description: "Created", content: { 'application/json': { schema: { $ref: '#/components/schemas/MessageProvider' } } } } }
+    }
+  },
+  "/api/system/settings/messaging/providers/{id}": {
+    get: { summary: "Get provider", description: "Get a messaging provider by id." },
+    put: { summary: "Update provider", description: "Update provider fields; setting is_default=true makes it the default for its channel.", requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/MessageProviderUpdate' } } } } },
+    delete: { summary: "Delete provider", description: "Delete a messaging provider." }
+  },
+  "/api/system/settings/messaging/providers/{id}/default": {
+    post: { summary: "Set default provider", description: "Mark provider as default for its channel (clears others)." }
+  },
+
+  // System: Settings - OTP
+  "/api/system/settings/messaging/otp": {
+    get: { summary: "Get OTP settings", description: "Get OTP enablement and channel configuration." },
+    put: {
+      summary: "Update OTP settings",
+      description: "Enable/disable OTP and select channels. Enabling requires SMTP or EMAIL provider for EMAIL, and default SMS provider for SMS.",
+      requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/OtpSettings' }, examples: { enableSms: { value: { enabled: true, channels: ["SMS"], code_ttl_sec: 300, max_attempts: 5 } } } } } },
+      responses: { 200: { description: "Saved", content: { 'application/json': { schema: { $ref: '#/components/schemas/OtpSettings' } } } } }
+    }
+  },
+
   // Server info must be protected; document role requirement
   "/api/info": {
     get: {
@@ -594,121 +818,96 @@ function examplesForStatus(code, errExamples) {
   return undefined;
 }
 
-function buildPaths(app) {
-  const endpoints = listEndpoints(app) || [];
-  // Filter to API routes only
-  const apiOnly = endpoints.filter((e) => e.path && e.path.startsWith("/api"));
-  const paths = {};
-  for (const e of apiOnly) {
-    const rawPath = e.path; // express-style path
-    const oaPath = expressToOpenApiPath(rawPath);
-    const methods = (e.methods || []).map((m) => String(m).toLowerCase());
-    if (!paths[oaPath]) paths[oaPath] = {};
-    for (const method of methods) {
-      const hasId = /\{[a-zA-Z0-9_]+\}/.test(oaPath);
-      const op = {
-        tags: [tagFor(rawPath)],
-        summary: opSummary(method, rawPath),
-        description: defaultDescription(method, rawPath),
-        parameters: [],
-        responses: {
-          200: {
-            description: "OK",
-            content: { "application/json": { schema: { type: "object" } } },
-          },
+function buildOperation(method, rawPath, isPublic) {
+  const m = method.toLowerCase();
+  const params = extractPathParams(rawPath).map((name) => ({
+    name,
+    in: "path",
+    required: true,
+    schema: { type: "string" },
+  }));
+  const op = {
+    summary: opSummary(method, rawPath),
+    description: defaultDescription(method, rawPath),
+    tags: [tagFor(rawPath)],
+    parameters: params,
+    responses: {},
+  };
+  // Default success response per method
+  const successCode = m === "post" ? "201" : m === "delete" ? "204" : "200";
+  const curl = buildCurlExamples(rawPath, method, !!isPublic);
+  op.responses[successCode] = {
+    description: m === "post" ? "Created" : m === "delete" ? "No Content" : "OK",
+    content: {
+      "application/json": {
+        schema: { type: "object", additionalProperties: true },
+        examples: curl,
+      },
+    },
+  };
+  // Standard error responses
+  const errs = errorExamples(rawPath, m);
+  for (const code of ["400", "401", "403", "404", "500"]) {
+    const ex = examplesForStatus(code, errs);
+    op.responses[code] = {
+      description:
+        code === "400"
+          ? "Bad Request"
+          : code === "401"
+          ? "Unauthorized"
+          : code === "403"
+          ? "Forbidden"
+          : code === "404"
+          ? "Not Found"
+          : "Internal Server Error",
+      content: {
+        "application/json": {
+          schema: inlineErrorSchema(rawPath, m),
+          ...(ex ? { examples: ex } : {}),
         },
-        security: isNoAuthPath(rawPath, method) ? [] : authSecurity(),
-      };
-      // Add projection query params for response shaping
-      if (["get","post","put","patch"].includes(method)) {
-        op.parameters.push(selectParam());
-        op.parameters.push(fieldsParam());
-        op.parameters.push(expandParam());
-      }
-      // List-like endpoints (no {id}) get pagination and q for GET
-      if (method === "get" && !hasId) {
-        for (const p of listQueryParams()) op.parameters.push(p);
-      }
-      // Merge overrides
-      const merged = mergeOverride(op, rawPath, method);
-      // Add minimal error responses with examples where available
-      const errs = errorExamples(rawPath, method);
-      const statusCodes = ["400", "401", "403", "404", "500"];
-      merged.responses = merged.responses || {};
-      for (const sc of statusCodes) {
-        const ex = examplesForStatus(sc, errs);
-        if (!ex) continue;
-        merged.responses[sc] = {
-          description: sc === "400" ? "Bad Request" : sc === "401" ? "Unauthorized" : sc === "403" ? "Forbidden" : sc === "404" ? "Not Found" : "Internal Server Error",
-          content: { "application/json": { examples: ex } },
-        };
-      }
-      paths[oaPath][method] = merged;
-    }
+      },
+    };
   }
-  // Ensure OVERRIDES-only endpoints are included (e.g., /api/info)
-  for (const [rawPath, methods] of Object.entries(OVERRIDES)) {
-    const oaPath = expressToOpenApiPath(rawPath);
-    if (!paths[oaPath]) paths[oaPath] = {};
-    for (const method of Object.keys(methods)) {
-      if (paths[oaPath][method]) continue; // already defined via express
-      const hasId = /\{[a-zA-Z0-9_]+\}/.test(oaPath);
-      const baseOp = {
-        tags: [tagFor(rawPath)],
-        summary: opSummary(method, rawPath),
-        description: defaultDescription(method, rawPath),
-        parameters: [],
-        responses: {
-          200: { description: "OK", content: { "application/json": { schema: { type: "object" } } } },
-        },
-        security: isNoAuthPath(rawPath, method) ? [] : authSecurity(),
-      };
-      if (["get","post","put","patch"].includes(method)) {
-        baseOp.parameters.push(selectParam());
-        baseOp.parameters.push(fieldsParam());
-        baseOp.parameters.push(expandParam());
-        if (method === "get" && !hasId) {
-          for (const p of listQueryParams()) baseOp.parameters.push(p);
-        }
-      }
-      const merged = mergeOverride(baseOp, rawPath, method);
-      const errs = errorExamples(rawPath, method);
-      const statusCodes = ["400", "401", "403", "404", "500"];
-      merged.responses = merged.responses || {};
-      for (const sc of statusCodes) {
-        const ex = examplesForStatus(sc, errs);
-        if (!ex) continue;
-        merged.responses[sc] = {
-          description: sc === "400" ? "Bad Request" : sc === "401" ? "Unauthorized" : sc === "403" ? "Forbidden" : sc === "404" ? "Not Found" : "Internal Server Error",
-          content: { "application/json": { examples: ex } },
-        };
-      }
-      paths[oaPath][method] = merged;
-    }
-  }
-  return paths;
+  return op;
 }
 
 export default function buildOpenApi(app) {
-  const vi = getVersionInfo();
-  const longDesc = [
-    "Automatically generated OpenAPI spec based on Express routes, with manual overrides for selected endpoints.",
-    "\n\nProjection:",
-    "- Use select for bracket projection to choose nested fields and expansions in one param: select=users[id,email,roles[id,name,permissions[code]]]",
-    "- Or use fields (comma list) and expand (comma list) separately. If both are provided, select takes precedence.",
-    "- Special case: fields='*' returns full objects (bypass projection).",
-  ].join("\n");
+  const { version, build, git_sha } = getVersionInfo();
+  const endpoints = listEndpoints(app);
+  const paths = {};
+
+  for (const ep of endpoints) {
+    const rawPath = ep.path;
+    const oaPath = expressToOpenApiPath(rawPath);
+    const methods = (ep.methods || []).map((m) => m.toLowerCase());
+    if (!paths[oaPath]) paths[oaPath] = {};
+    for (const m of methods) {
+      // Skip HEAD/OPTIONS
+      if (["head", "options"].includes(m)) continue;
+      const isPublic = isNoAuthPath(rawPath, m);
+      let op = buildOperation(m, rawPath, isPublic);
+      // Security for protected endpoints
+      if (!isPublic) op.security = authSecurity();
+      // Allow manual overrides
+      op = mergeOverride(op, rawPath, m);
+      paths[oaPath][m] = op;
+    }
+  }
+
+  // Components (security + minimal schemas used by overrides)
   const doc = {
     openapi: "3.0.3",
     info: {
       title: "eAssist API",
-      version: vi?.version || "0.0.0",
-      description: longDesc,
-      "x-build": vi?.build || null,
-      "x-git-sha": vi?.git_sha || null,
+      description:
+        "Auto-generated OpenAPI from Express routes with manual overrides for schemas and examples.",
+      version,
+      ...(build ? { 'x-build': build } : {}),
+      ...(git_sha ? { 'x-git-sha': git_sha } : {}),
     },
-    servers: [ { url: "http://localhost:8080" } ],
-    paths: buildPaths(app),
+    servers: [{ url: "http://localhost:8080", description: "Local" }],
+    tags: [],
+    paths,
     components: {
       securitySchemes: {
         bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
@@ -721,7 +920,13 @@ export default function buildOpenApi(app) {
           type: "object",
           properties: {
             ok: { type: "boolean", example: false },
-            error: { type: "object", properties: { code: { type: "string" }, message: { type: "string" } } },
+            error: {
+              type: "object",
+              properties: {
+                code: { type: "string" },
+                message: { type: "string" },
+              },
+            },
             details: { type: "object", additionalProperties: true },
             request_id: { type: "string" },
             path: { type: "string" },
@@ -729,34 +934,116 @@ export default function buildOpenApi(app) {
             timestamp: { type: "string", format: "date-time" },
           },
         },
-        KBRatingSummary: {
-          type: "object",
-          properties: { avg: { type: "number" }, count: { type: "integer" } },
-        },
-        KBArticleTag: {
-          type: "object",
-          required: ["article_id", "tag_id"],
-          properties: { article_id: { type: "string", format: "uuid" }, tag_id: { type: "string", format: "uuid" } },
-        },
-        KBArticleTagEntry: {
-          type: "object",
-          properties: { tag_id: { type: "string", format: "uuid" }, name: { type: "string" } },
-        },
-        KBTag: { type: "object", required: ["name"], properties: { id: { type: "string", format: "uuid" }, name: { type: "string" } } },
-        KBArticle: { type: "object", required: ["title"], properties: { id: { type: "string", format: "uuid" }, title: { type: "string" }, body: { type: "string" }, is_published: { type: "boolean" }, created_at: { type: "string", format: "date-time" } } },
-        FAQ: { type: "object", required: ["title"], properties: { id: { type: "string", format: "uuid" }, title: { type: "string" }, body: { type: "string" }, is_published: { type: "boolean" }, system_category_id: { type: "integer", nullable: true }, created_at: { type: "string", format: "date-time" } } },
-        Video: { type: "object", required: ["title"], properties: { id: { type: "string", format: "uuid" }, title: { type: "string" }, description: { type: "string" }, category_id: { type: "string", format: "uuid" }, system_category_id: { type: "integer" }, url: { type: "string" }, duration_seconds: { type: "integer" }, language: { type: "string" }, is_published: { type: "boolean" }, created_at: { type: "string", format: "date-time" } } },
-        KBRating: { type: "object", required: ["article_id", "rating"], properties: { id: { type: "string", format: "uuid" }, article_id: { type: "string", format: "uuid" }, user_id: { type: "string", format: "uuid" }, rating: { type: "integer", minimum: 1, maximum: 5 }, created_at: { type: "string", format: "date-time" } } },
-        KnowledgeSearchResult: {
+        MessageProvider: {
           type: "object",
           properties: {
-            faqs: { type: "array", items: { type: "object", properties: { id: { type: "string", format: "uuid" }, title: { type: "string" } } } },
-            kb: { type: "array", items: { type: "object", properties: { id: { type: "string", format: "uuid" }, title: { type: "string" } } } },
-            videos: { type: "array", items: { type: "object", properties: { id: { type: "string", format: "uuid" }, title: { type: "string" } } } },
+            id: { type: "string", format: "uuid" },
+            name: { type: "string" },
+            channel: { type: "string", enum: ["EMAIL", "SMS", "WHATSAPP", "TELEGRAM"] },
+            config: { type: "object", additionalProperties: true },
+            is_active: { type: "boolean" },
+            is_default: { type: "boolean" },
+            description: { type: "string", nullable: true },
+            created_at: { type: "string", format: "date-time" },
+            updated_at: { type: "string", format: "date-time" },
           },
         },
+        MessageProviderCreate: {
+          type: "object",
+          required: ["name", "channel"],
+          properties: {
+            name: { type: "string" },
+            channel: { type: "string", enum: ["EMAIL", "SMS", "WHATSAPP", "TELEGRAM"] },
+            config: { type: "object", additionalProperties: true },
+            is_active: { type: "boolean" },
+            is_default: { type: "boolean" },
+            description: { type: "string" },
+          },
+        },
+        MessageProviderUpdate: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            channel: { type: "string", enum: ["EMAIL", "SMS", "WHATSAPP", "TELEGRAM"] },
+            config: { type: "object", additionalProperties: true },
+            is_active: { type: "boolean" },
+            is_default: { type: "boolean" },
+            description: { type: "string" },
+          },
+        },
+        OtpSettings: {
+          type: "object",
+          properties: {
+            enabled: { type: "boolean" },
+            channels: { type: "array", items: { type: "string", enum: ["SMS", "EMAIL"] } },
+            code_ttl_sec: { type: "integer", minimum: 30 },
+            max_attempts: { type: "integer", minimum: 1 },
+          },
+        },
+        Message: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            channel: { type: "string", enum: ["EMAIL", "SMS", "IN_APP", "WHATSAPP", "TELEGRAM"] },
+            to_user_id: { type: "string", format: "uuid" },
+            to_email: { type: "string" },
+            to_phone: { type: "string" },
+            subject: { type: "string" },
+            body: { type: "string" },
+            body_html: { type: "string" },
+            template_code: { type: "string" },
+            status: { type: "string" },
+            scheduled_at: { type: "string", format: "date-time" },
+            created_at: { type: "string", format: "date-time" },
+            updated_at: { type: "string", format: "date-time" },
+          },
+        },
+        MessageCreate: {
+          type: "object",
+          properties: {
+            channel: { type: "string", enum: ["EMAIL", "SMS", "IN_APP", "WHATSAPP", "TELEGRAM"] },
+            to_user_id: { type: "string", format: "uuid" },
+            to_email: { type: "string" },
+            to_phone: { type: "string" },
+            subject: { type: "string" },
+            body: { type: "string" },
+            body_html: { type: "string" },
+            template_code: { type: "string" },
+            attachments: { type: "array", items: { type: "object" } },
+          },
+        },
+        MessageUpdate: {
+          type: "object",
+          properties: {
+            status: { type: "string" },
+            sent_at: { type: "string", format: "date-time" },
+            read_at: { type: "string", format: "date-time" },
+            provider_message_id: { type: "string" },
+            provider_response: { type: "object" },
+          },
+        },
+        // Knowledge-related minimal schemas (placeholders)
+        FAQ: { type: "object", properties: { id: { type: "string", format: "uuid" }, title: { type: "string" }, body: { type: "string" }, is_published: { type: "boolean" } } },
+        KBArticle: { type: "object", properties: { id: { type: "string", format: "uuid" }, title: { type: "string" }, body: { type: "string" }, is_published: { type: "boolean" } } },
+        Video: { type: "object", properties: { id: { type: "string", format: "uuid" }, title: { type: "string" }, url: { type: "string" }, duration_seconds: { type: "integer" } } },
+        KBRating: { type: "object", properties: { id: { type: "string", format: "uuid" }, article_id: { type: "string", format: "uuid" }, user_id: { type: "string", format: "uuid" }, rating: { type: "integer", minimum: 1, maximum: 5 } } },
+        KBRatingSummary: { type: "object", properties: { avg: { type: "number" }, count: { type: "integer" } } },
+        KBTag: { type: "object", properties: { id: { type: "string", format: "uuid" }, name: { type: "string" } } },
+        KBArticleTag: { type: "object", properties: { article_id: { type: "string", format: "uuid" }, tag_id: { type: "string", format: "uuid" } } },
+        KBArticleTagEntry: { type: "object", properties: { tag_id: { type: "string", format: "uuid" }, name: { type: "string" } } },
+        KnowledgeSearchResult: { type: "object", properties: { faqs: { type: "array", items: { $ref: "#/components/schemas/FAQ" } }, kb: { type: "array", items: { $ref: "#/components/schemas/KBArticle" } }, videos: { type: "array", items: { $ref: "#/components/schemas/Video" } } } },
       },
     },
   };
+
+  // Collect unique tags from paths
+  const tagSet = new Set();
+  for (const [p, methods] of Object.entries(paths)) {
+    for (const [m, op] of Object.entries(methods)) {
+      if (Array.isArray(op.tags)) for (const t of op.tags) tagSet.add(t);
+    }
+  }
+  doc.tags = Array.from(tagSet).sort().map((name) => ({ name }));
+
   return doc;
 }
