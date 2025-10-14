@@ -10,6 +10,7 @@ import { requireAuth, requirePermissions } from "./middleware/auth.js";
 import apiKeysRouter from "./modules/system/settings/security/api-keys/router.js";
 import { PERMISSIONS } from "./constants/permissions.js";
 import lookups from "./modules/system/lookups/index.js";
+import messages from "./modules/messages/index.js";
 const r = Router();
 r.use("/auth", auth);
 // Publicly expose lookups read endpoints without auth (writes remain protected in the routers)
@@ -48,6 +49,8 @@ r.use("/knowledge", (req, res, next) => {
 });
 // Keep the rest of /system protected
 r.use("/system", requireAuth, system);
+// New user-facing messaging module (auth enforced inside the router)
+r.use("/messages", messages);
 r.use("/admin", requireAuth, admin);
 r.use("/public", pub);
 // Token management alias (permission: apiKeys.manage)

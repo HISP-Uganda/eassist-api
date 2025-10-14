@@ -212,6 +212,12 @@ export const PERMISSIONS = Object.freeze({
   ADMIN_PREFS_READ: "admin.preferences.read",
   ADMIN_PREFS_UPDATE: "admin.preferences.update",
   ADMIN_NOTIFICATIONS_READ: "admin.notifications.read",
+
+  // System: Messaging
+  SYS_MESSAGES_LIST: "system.messages.list",
+  SYS_MESSAGES_READ: "system.messages.read",
+  SYS_MESSAGES_SEND: "system.messages.send",
+  SYS_MESSAGES_UPDATE: "system.messages.update",
 });
 
 // Flat, ordered list of all permission codes
@@ -395,6 +401,12 @@ export const PERMISSION_GROUPS = Object.freeze({
     PERMISSIONS.SYS_FILES_READ,
     PERMISSIONS.SYS_FILES_DELETE,
     PERMISSIONS.AUDIT_READ,
+  ],
+  system_messages: [
+    PERMISSIONS.SYS_MESSAGES_LIST,
+    PERMISSIONS.SYS_MESSAGES_READ,
+    PERMISSIONS.SYS_MESSAGES_SEND,
+    PERMISSIONS.SYS_MESSAGES_UPDATE,
   ],
 });
 

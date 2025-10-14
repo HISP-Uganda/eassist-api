@@ -7,6 +7,7 @@ import workflows from "./workflows/index.js";
 import inbox from "./inbox/index.js";
 import files from "./files/router.js";
 import audit from "./audit/router.js";
+import messages from "./messages/router.js";
 import { requirePermissions } from "../../middleware/auth.js";
 import { PERMISSIONS } from "../../constants/permissions.js";
 const r = Router();
@@ -27,4 +28,6 @@ r.use("/inbox", requirePermissions(PERMISSIONS.INBOX_MANAGE), inbox);
 r.use("/files", requirePermissions(PERMISSIONS.FILES_READ), files);
 // Audit logs (read-only)
 r.use("/audit", requirePermissions(PERMISSIONS.AUDIT_READ), audit);
+// Messaging (per-route permissions are enforced within the router)
+r.use("/messages", messages);
 export default r;

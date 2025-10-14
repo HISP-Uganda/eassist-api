@@ -12,6 +12,9 @@ const FK_MAP = {
   assigned_agent_id: { table: 'users', key: 'assigned_agent', defaults: ['id','email','full_name'], allowed: ['id','email','full_name'] },
   claimed_by: { table: 'users', key: 'claimed_by_user', defaults: ['id','email','full_name'], allowed: ['id','email','full_name'] },
 
+  // Messaging
+  to_user_id: { table: 'users', key: 'to_user', defaults: ['id','email','full_name'], allowed: ['id','email','full_name'] },
+
   system_id: { table: 'systems', key: 'system', defaults: ['id','name','code'], allowed: ['id','name','code','description','category_id','is_active','created_at','updated_at'] },
   module_id: { table: 'system_modules', key: 'module', defaults: ['id','name'], allowed: ['id','name','code','description','system_id','is_active','created_at','updated_at'] },
   category_id: { table: 'issue_categories', key: 'category', defaults: ['id','name'], allowed: ['id','name','code','description','system_id','parent_id','is_active','created_at','updated_at'] },
@@ -345,6 +348,12 @@ const COLLECTIONS_MAP = Object.freeze({
   roles: {
     permissions: {
       build: (ids) => ({ text: `SELECT rp.role_id AS parent_id, p.* FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE rp.role_id = ANY($1::uuid[]) ORDER BY p.code ASC`, values: [ids] })
+    }
+  },
+  // New: messages attachments expansion
+  messages: {
+    attachments: {
+      build: (ids) => ({ text: `SELECT message_id AS parent_id, ma.* FROM message_attachments ma WHERE ma.message_id = ANY($1::uuid[]) ORDER BY ma.uploaded_at DESC`, values: [ids] })
     }
   }
 });
