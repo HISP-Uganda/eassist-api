@@ -7,7 +7,7 @@ import { requireAnyPermission } from "../../../middleware/auth.js";
 import { getUserPermissions } from "../../../middleware/auth.js";
 import { PERMISSIONS } from "../../../constants/permissions.js";
 import { BadRequest } from "../../../utils/errors.js";
-import { listDetailed } from "../../../utils/relations.js";
+import { listDetailed, readDetailed } from "../../../utils/relations.js";
 const r = Router();
 const t = "users";
 
@@ -239,7 +239,12 @@ r.post(
       }
 
       await client.query('COMMIT');
-      res.status(201).json(scrub(user));
+      // Re-fetch enriched user with nested relations/collections and projection support
+      let enriched = null;
+      try {
+        enriched = await readDetailed(t, 'id', user.id, req);
+      } catch (_) {}
+      return res.status(201).json(scrub(enriched || user));
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch {}
       next(e);
@@ -390,7 +395,12 @@ r.put(
       }
 
       await client.query('COMMIT');
-      res.json(scrub(updated));
+      // Re-fetch enriched user with nested relations/collections and projection support
+      let enriched = null;
+      try {
+        enriched = await readDetailed(t, 'id', req.params.id, req);
+      } catch (_) {}
+      return res.json(scrub(enriched || updated));
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch {}
       next(e);

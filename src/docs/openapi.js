@@ -1,4 +1,5 @@
 import listEndpoints from "express-list-endpoints";
+import { getVersionInfo } from "../utils/version.js";
 
 function expressToOpenApiPath(path) {
   return path.replace(/:(\w+)/g, "{$1}");
@@ -62,7 +63,8 @@ function authSecurity() {
 function isNoAuthPath(path, method = 'get') {
   const m = String(method || 'get').toLowerCase();
   if (path.startsWith("/api/public")) return true;
-  if (path === "/api/info" || path === "/api/resources") return true;
+  // Removed /api/info from public endpoints; it now requires authentication
+  if (path === "/api/resources") return true;
   if (path === "/api/docs.json" || path.startsWith("/api/docs")) return true;
   // Lookups: only GET are public; writes require auth
   if (path.startsWith("/api/system/lookups")) return m === 'get';
@@ -133,6 +135,17 @@ function expandParam() {
     schema: { type: "string" },
     description:
       "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
+  };
+}
+
+function selectParam() {
+  return {
+    name: "select",
+    in: "query",
+    required: false,
+    schema: { type: "string" },
+    description:
+      "Bracket projection to shape nested data and expansions in one param. Example: users[id,full_name,roles[id,name,permissions[code]]]. Overrides 'fields' and 'expand'. Use fields='*' to bypass projection.",
   };
 }
 
@@ -320,6 +333,110 @@ const OVERRIDES = {
   },
   "/api/knowledge/kb/tag-map/article/{articleId}": {
     get: { summary: "List tags for article", description: "List tag_id and name for a given article.", parameters: [ { name: "articleId", in: "path", required: true, schema: { type: "string", format: "uuid" } } ], responses: { 200: { content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/KBArticleTagEntry' } }, examples: { payload: { value: [ { tag_id: '40000000-0000-0000-0000-000000000001', name: 'howto' } ] } } } } } } }
+  },
+
+  // Public ratings endpoints
+  "/api/public/faqs/{id}/rate": {
+    post: {
+      summary: "Rate a FAQ",
+      description: "Submit a rating (1..5) for a published FAQ. Authenticated users upsert by user_id; anonymous may include fingerprint.",
+      parameters: [ { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } } ],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: { type: 'object', required: ['rating'], properties: { rating: { type: 'integer', minimum: 1, maximum: 5 }, fingerprint: { type: 'string' } } },
+            examples: { payload: { value: { rating: 5, fingerprint: "anon-device-123" } } }
+          }
+        }
+      },
+      responses: { 201: { description: 'Created/Updated', content: { 'application/json': { schema: { type: 'object', properties: { rating: { type: 'object' }, summary: { $ref: '#/components/schemas/KBRatingSummary' } } } } } } }
+    }
+  },
+  "/api/public/kb/articles/{id}/rate": {
+    post: {
+      summary: "Rate a KB article",
+      description: "Submit a rating (1..5) for a published KB article. Authenticated users upsert by user_id; anonymous may include fingerprint.",
+      parameters: [ { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } } ],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: { type: 'object', required: ['rating'], properties: { rating: { type: 'integer', minimum: 1, maximum: 5 }, fingerprint: { type: 'string' } } },
+            examples: { payload: { value: { rating: 4 } } }
+          }
+        }
+      },
+      responses: { 201: { description: 'Created/Updated', content: { 'application/json': { schema: { type: 'object', properties: { rating: { type: 'object' }, summary: { $ref: '#/components/schemas/KBRatingSummary' } } } } } } }
+    }
+  },
+  "/api/public/videos/{id}/rate": {
+    post: {
+      summary: "Rate a video",
+      description: "Submit a rating (1..5) for a published video. Authenticated users upsert by user_id; anonymous may include fingerprint.",
+      parameters: [ { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } } ],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: { type: 'object', required: ['rating'], properties: { rating: { type: 'integer', minimum: 1, maximum: 5 }, fingerprint: { type: 'string' } } },
+            examples: { payload: { value: { rating: 3, fingerprint: "device-abc" } } }
+          }
+        }
+      },
+      responses: { 201: { description: 'Created/Updated', content: { 'application/json': { schema: { type: 'object', properties: { rating: { type: 'object' }, summary: { $ref: '#/components/schemas/KBRatingSummary' } } } } } } }
+    }
+  },
+
+  // Public rating summary endpoints
+  "/api/public/faqs/{id}/ratings/summary": {
+    get: {
+      summary: "FAQ rating summary",
+      description: "Return average rating and total ratings (count) for a published FAQ.",
+      parameters: [ { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } } ],
+      responses: {
+        200: {
+          description: "Summary",
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/KBRatingSummary' }, examples: { payload: { value: { avg: 4.7, count: 12 } } } } }
+        }
+      }
+    }
+  },
+  "/api/public/kb/articles/{id}/ratings/summary": {
+    get: {
+      summary: "KB article rating summary",
+      description: "Return average rating and total ratings (count) for a published KB article.",
+      parameters: [ { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } } ],
+      responses: {
+        200: {
+          description: "Summary",
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/KBRatingSummary' }, examples: { payload: { value: { avg: 4.2, count: 34 } } } } }
+        }
+      }
+    }
+  },
+  "/api/public/videos/{id}/ratings/summary": {
+    get: {
+      summary: "Video rating summary",
+      description: "Return average rating and total ratings (count) for a published video.",
+      parameters: [ { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } } ],
+      responses: {
+        200: {
+          description: "Summary",
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/KBRatingSummary' }, examples: { payload: { value: { avg: 3.9, count: 18 } } } } }
+        }
+      }
+    }
+  },
+
+  // Server info must be protected; document role requirement
+  "/api/info": {
+    get: {
+      summary: "Server info",
+      description: "Service health and environment details. Authentication required; available to Admin or Superuser.",
+      // Custom extension to clarify required roles
+      "x-roles-any": ["Admin", "Superuser"]
+    }
   }
 };
 
@@ -341,6 +458,10 @@ function mergeOverride(op, rawPath, method) {
   }
   if (o.responses) {
     next.responses = mergeResponses(op.responses || {}, o.responses);
+  }
+  // Merge custom extensions (keys starting with x-)
+  for (const [k, v] of Object.entries(o)) {
+    if (k.startsWith('x-')) next[k] = v;
   }
   return next;
 }
@@ -464,6 +585,7 @@ function examplesForStatus(code, errExamples) {
     }
     return Object.keys(out).length ? out : undefined;
   };
+  if (!errExamples) return undefined;
   if (code === "400") return pick(["validation", "missingReference", "badRequest"]);
   if (code === "401") return pick(["unauthorized"]);
   if (code === "403") return pick(["forbidden"]);
@@ -472,447 +594,169 @@ function examplesForStatus(code, errExamples) {
   return undefined;
 }
 
-export default function buildOpenApi(app) {
-  const apiEndpoints = listEndpoints(app);
+function buildPaths(app) {
+  const endpoints = listEndpoints(app) || [];
+  // Filter to API routes only
+  const apiOnly = endpoints.filter((e) => e.path && e.path.startsWith("/api"));
   const paths = {};
-  const tagsSet = new Set();
-
-  // Components
-  const components = {
-    securitySchemes: {
-      bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
-      basicAuth: { type: "http", scheme: "basic" },
-      apiKeyAuth: { type: "apiKey", in: "header", name: "X-API-Key" },
-      cookieAuth: { type: "apiKey", in: "cookie", name: "uid" },
-    },
-    schemas: {
-      // Generic error envelope used across the API
-      ErrorResponseBase: {
-        type: "object",
-        required: ["ok", "error", "request_id", "path", "method", "timestamp"],
-        properties:
-         {
-          ok: { type: "boolean", example: false },
-          error: {
-            type: "object",
-            required: ["code", "message"],
-            properties: {
-              code: { type: "string", example: "BAD_REQUEST" },
-              message: { type: "string", example: "Validation failed" },
-            },
-          },
-          details: { type: "object", nullable: true, additionalProperties: true },
-          request_id: { type: "string", example: "REQ-abc123" },
-          path: { type: "string", example: "/api/public/faqs" },
-          method: { type: "string", example: "GET" },
-          timestamp: { type: "string", format: "date-time" },
-        },
-      },
-
-      // Common user representation
-      User: {
-        type: "object",
-        required: ["id", "email"],
-        properties: {
-          id: { type: "string", description: "Internal user id", format: 'uuid' },
-          email: { type: "string", format: "email" },
-          full_name: { type: "string" },
-          is_active: { type: "boolean" },
-          created_at: { type: "string", format: "date-time" },
-          updated_at: { type: "string", format: "date-time", nullable: true },
-          roles: { type: "array", items: { $ref: "#/components/schemas/Role" }, description: "Assigned roles; include permissions when expanded via 'expand=roles.permissions'" },
-          tiers: { type: "array", items: { $ref: "#/components/schemas/AgentTier" }, description: "User's support tier memberships (max 1)." },
-          support_groups: { type: "array", items: { $ref: "#/components/schemas/AgentGroup" }, description: "User's support group memberships." },
-        },
-      },
-
-      // Auth related schemas
-      AuthLoginRequest: {
-        type: "object",
-        required: ["email", "password"],
-        properties: { email: { type: "string", format: "email" }, password: { type: "string" } },
-      },
-      AuthLoginResponse: {
-        type: "object",
-        required: ["access_token", "refresh_token", "user"],
-        properties: {
-          access_token: { type: "string" },
-          refresh_token: { type: "string" },
-          user: { $ref: "#/components/schemas/User" },
-        },
-      },
-      AuthAccessToken: { type: "object", required: ["access_token"], properties: { access_token: { type: "string" } } },
-
-      // API keys
-      ApiKeyPublic: {
-        type: "object",
-        required: ["id", "name", "scope", "is_active", "prefix"],
-        properties: {
-          id: { type: "string", format: 'uuid' },
-          name: { type: "string" },
-          scope: { type: "string" },
-          is_active: { type: "boolean" },
-          created_at: { type: "string", format: "date-time" },
-          updated_at: { type: "string", format: "date-time", nullable: true },
-          created_by: { type: "string", nullable: true, format: 'uuid' },
-          expires_at: { type: "string", format: "date-time", nullable: true },
-          prefix: { type: "string" },
-        },
-      },
-      ApiKeyWithSecret: { allOf: [{ $ref: "#/components/schemas/ApiKeyPublic" }, { type: "object", required: ["api_key"], properties: { api_key: { type: "string" } } }] },
-
-      // Knowledge base / FAQs
-      KBArticle: {
-        type: "object",
-        required: ["id", "title"],
-        properties: {
-          id: { type: "string", format: 'uuid' },
-          title: { type: "string" },
-          body: { type: "string" },
-          is_published: { type: "boolean" },
-          created_by: { type: "string", nullable: true, format: 'uuid' },
-          created_at: { type: "string", format: "date-time" },
-          updated_at: { type: "string", format: "date-time", nullable: true },
-          tags: { type: "array", items: { type: "string" } },
-        },
-      },
-      FAQ: { type: "object", required: ["id", "title"], properties: { id: { type: "string", format: 'uuid' }, title: { type: "string" }, body: { type: "string" }, is_published: { type: "boolean" }, system_category_id: { type: "integer", nullable: true }, created_by: { type: "string", nullable: true, format: 'uuid' }, created_at: { type: "string", format: "date-time" } } },
-
-      // Videos
-      Video: { type: "object", required: ["id", "title"], properties: { id: { type: "string", format: 'uuid' }, title: { type: "string" }, description: { type: "string" }, category_id: { type: "string", format: 'uuid' }, system_category_id: { type: "integer" }, url: { type: "string", format: "uri" }, duration_seconds: { type: "integer" }, language: { type: "string" }, is_published: { type: "boolean" }, created_at: { type: "string", format: "date-time" } } },
-
-      // Systems / modules / categories
-      SystemCategory: { type: "object", properties: { id: { type: "string" }, name: { type: "string" } } },
-      System: { type: "object", properties: { id: { type: "string" }, category_id: { type: "string" }, name: { type: "string" }, code: { type: "string" }, description: { type: "string" } } },
-      SystemModule: { type: "object", properties: { id: { type: "string" }, system_id: { type: "string" }, name: { type: "string" }, code: { type: "string" } } },
-
-      // Lookups
-      Status: { type: "object", properties: { id: { type: "string" }, code: { type: "string" }, name: { type: "string" } } },
-      Priority: { type: "object", properties: { id: { type: "string" }, code: { type: "string" }, name: { type: "string" } } },
-
-      // RBAC
-      Role: { type: "object", required: ["id","name"], properties: { id: { type: "string" }, name: { type: "string" }, description: { type: "string", nullable: true }, permissions: { type: "array", items: { type: "string" } } } },
-      Permission: { type: "object", required: ["id","code"], properties: { id: { type: "string" }, code: { type: "string" }, name: { type: "string" }, description: { type: "string", nullable: true } } },
-
-      // Settings and sessions
-      SettingKV: { type: "object", properties: { key: { type: "string" }, value: { type: "string" } } },
-      UserSession: { type: "object", properties: { id: { type: "string" }, user_id: { type: "string" }, user_agent: { type: "string" }, ip_address: { type: "string" }, created_at: { type: "string", format: "date-time" }, expires_at: { type: "string", format: "date-time" } } },
-
-      // System events / inbox
-      AuditEvent: { type: "object", properties: { id: { type: "string" }, actor_user_id: { type: "string" }, action: { type: "string" }, details: { type: "object", additionalProperties: true }, created_at: { type: "string", format: "date-time" } } },
-      InboxEmail: { type: "object", properties: { id: { type: "string" }, from: { type: "string" }, subject: { type: "string" }, body: { type: "string" }, received_at: { type: "string", format: "date-time" } } },
-
-      // Agent groups/tiers
-      AgentGroup: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, members: { type: "array", items: { type: "string" } } } },
-      AgentTier: { type: "object", properties: { id: { type: "string" }, name: { type: "string" } } },
-
-      // Workflows
-      WorkflowRule: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, enabled: { type: "boolean" }, trigger: { type: "string" }, actions: { type: "array", items: { type: "object", additionalProperties: true } } } },
-
-      // Tickets composite/list schemas
-      TicketNote: {
-        type: "object",
-        properties: { id: { type: "string" }, ticket_id: { type: "string" }, user_id: { type: "string" }, body: { type: "string" }, is_internal: { type: "boolean" }, created_at: { type: "string", format: "date-time" } }
-      },
-      TicketAttachment: {
-        type: "object",
-        properties: { id: { type: "string" }, ticket_id: { type: "string" }, file_name: { type: "string" }, file_type: { type: "string" }, file_size_bytes: { type: "integer" }, storage_path: { type: "string" }, uploaded_by: { type: "string" }, uploaded_at: { type: "string", format: "date-time" } }
-      },
-      TicketWatcher: {
-        type: "object",
-        properties: { id: { type: "string" }, ticket_id: { type: "string" }, user_id: { type: "string", nullable: true }, email: { type: "string", format: "email", nullable: true }, notify: { type: "boolean" } }
-      },
-      Ticket: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          ticket_key: { type: "string" },
-          title: { type: "string" },
-          description: { type: "string" },
-          reporter_user_id: { type: "string", nullable: true },
-          assigned_agent_id: { type: "string", nullable: true },
-          status_id: { type: "string" },
-          priority_id: { type: "string" },
-          severity_id: { type: "string" },
-          system_id: { type: "string" },
-          module_id: { type: "string" },
-          category_id: { type: "string" },
-          group_id: { type: "string" },
-          tier_id: { type: "string" },
-          created_at: { type: "string", format: "date-time" },
-          updated_at: { type: "string", format: "date-time", nullable: true },
-          notes: { type: "array", items: { $ref: "#/components/schemas/TicketNote" } },
-          attachments: { type: "array", items: { $ref: "#/components/schemas/TicketAttachment" } },
-          // Example nested objects when using listDetailed/readDetailed
-          reporter_user: { type: "object", nullable: true, additionalProperties: true },
-          assigned_agent: { type: "object", nullable: true, additionalProperties: true },
-          system: { type: "object", nullable: true, additionalProperties: true },
-          module: { type: "object", nullable: true, additionalProperties: true },
-          category: { type: "object", nullable: true, additionalProperties: true },
-          status: { type: "object", nullable: true, additionalProperties: true },
-          priority: { type: "object", nullable: true, additionalProperties: true },
-          severity: { type: "object", nullable: true, additionalProperties: true },
-          source: { type: "object", nullable: true, additionalProperties: true },
-          group: { type: "object", nullable: true, additionalProperties: true },
-          tier: { type: "object", nullable: true, additionalProperties: true }
-        },
-      },
-      TicketList: {
-        type: "object",
-        properties: {
-          items: { type: "array", items: { $ref: "#/components/schemas/Ticket" } },
-          page: { type: "integer" },
-          pageSize: { type: "integer" },
-          total: { type: "integer" },
-        },
-      },
-
-      // Knowledge extra schemas
-      KBRating: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, article_id: { type: 'string', format: 'uuid' }, user_id: { type: 'string', format: 'uuid' }, rating: { type: 'integer', minimum: 1, maximum: 5 }, created_at: { type: 'string', format: 'date-time' } } },
-      KBTag: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string' }, created_at: { type: 'string', format: 'date-time', nullable: true } } },
-      KBArticleTag: { type: 'object', properties: { article_id: { type: 'string', format: 'uuid' }, tag_id: { type: 'string', format: 'uuid' } }, required: ['article_id','tag_id'] },
-      KBArticleTagEntry: { type: 'object', properties: { tag_id: { type: 'string', format: 'uuid' }, name: { type: 'string' } } },
-      KnowledgeSearchResult: { type: 'object', properties: { faqs: { type: 'array', items: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, title: { type: 'string' } } } }, kb: { type: 'array', items: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, title: { type: 'string' } } } }, videos: { type: 'array', items: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, title: { type: 'string' } } } } } },
-      KBRatingSummary: { type: 'object', properties: { avg: { type: 'number', nullable: true }, count: { type: 'integer' } } },
-    },
-  }; // close components
-
-  // Heuristic to determine a sensible response schema for common endpoints.
-  function guessResponseSchema(path, _method) {
-    // Prefer specific resources when the path contains a resource id
-    if (path.includes('{id}')) {
-      // Specific sub-resources first
-      if (path.includes('/tickets/attachments') || path.includes('/attachments')) return { $ref: '#/components/schemas/TicketAttachment' };
-      if (path.includes('/tickets/notes') || path.includes('/notes')) return { $ref: '#/components/schemas/TicketNote' };
-      if (path.includes('/tickets/watchers') || path.includes('/watchers')) return { $ref: '#/components/schemas/TicketWatcher' };
-      if (path.includes('/kb') || path.includes('/kb-articles')) return { $ref: '#/components/schemas/KBArticle' };
-      if (path.includes('/faqs')) return { $ref: '#/components/schemas/FAQ' };
-      if (path.includes('/videos')) return { $ref: '#/components/schemas/Video' };
-      if (path.includes('/tokens/api-keys')) return { $ref: '#/components/schemas/ApiKeyPublic' };
-      if (path.includes('/users')) return { $ref: '#/components/schemas/User' };
-      if (path.includes('/roles')) return { $ref: '#/components/schemas/Role' };
-      if (path.includes('/settings')) return { $ref: '#/components/schemas/SettingKV' };
-      if (path.includes('/sessions')) return { $ref: '#/components/schemas/UserSession' };
-      if (path.includes('/audit')) return { $ref: '#/components/schemas/AuditEvent' };
-      if (path.includes('/inbox')) return { $ref: '#/components/schemas/InboxEmail' };
-      if (path.includes('/agents/groups')) return { $ref: '#/components/schemas/AgentGroup' };
-      if (path.includes('/agents/tiers')) return { $ref: '#/components/schemas/AgentTier' };
-      if (path.includes('/workflows')) return { $ref: '#/components/schemas/WorkflowRule' };
-      if (path.includes('/tickets')) return { $ref: '#/components/schemas/Ticket' };
-    }
-    // Collection endpoints (order: specific sub-resources before generic /tickets)
-    if (path.includes('/tickets/attachments') || path.includes('/attachments')) return { type: 'array', items: { $ref: '#/components/schemas/TicketAttachment' } };
-    if (path.includes('/tickets/notes') || path.includes('/notes')) return { type: 'array', items: { $ref: '#/components/schemas/TicketNote' } };
-    if (path.includes('/tickets/watchers') || path.includes('/watchers')) return { type: 'array', items: { $ref: '#/components/schemas/TicketWatcher' } };
-    if (path.includes('/tickets')) return { $ref: '#/components/schemas/TicketList' };
-    if (path.includes('/kb') || path.includes('/kb-articles')) return { type: 'array', items: { $ref: '#/components/schemas/KBArticle' } };
-    if (path.includes('/faqs')) return { type: 'array', items: { $ref: '#/components/schemas/FAQ' } };
-    if (path.includes('/videos')) return { type: 'array', items: { $ref: '#/components/schemas/Video' } };
-    if (path.includes('/tokens/api-keys')) return { type: 'array', items: { $ref: '#/components/schemas/ApiKeyPublic' } };
-    if (path.includes('/roles')) return { type: 'array', items: { $ref: '#/components/schemas/Role' } };
-    if (path.includes('/settings')) return { type: 'array', items: { $ref: '#/components/schemas/SettingKV' } };
-    if (path.includes('/sessions')) return { type: 'array', items: { $ref: '#/components/schemas/UserSession' } };
-    if (path.includes('/audit')) return { type: 'array', items: { $ref: '#/components/schemas/AuditEvent' } };
-    if (path.includes('/inbox')) return { type: 'array', items: { $ref: '#/components/schemas/InboxEmail' } };
-    if (path.includes('/agents/groups')) return { type: 'array', items: { $ref: '#/components/schemas/AgentGroup' } };
-    if (path.includes('/agents/tiers')) return { type: 'array', items: { $ref: '#/components/schemas/AgentTier' } };
-    if (path.includes('/workflows')) return { type: 'array', items: { $ref: '#/components/schemas/WorkflowRule' } };
-    // Default: generic object
-    return { type: 'object' };
-  }
-
-  // Build paths using endpoints
-  for (const e of apiEndpoints) {
-    const oaPath = expressToOpenApiPath(e.path);
+  for (const e of apiOnly) {
+    const rawPath = e.path; // express-style path
+    const oaPath = expressToOpenApiPath(rawPath);
+    const methods = (e.methods || []).map((m) => String(m).toLowerCase());
     if (!paths[oaPath]) paths[oaPath] = {};
-    const pathParamNames = extractPathParams(e.path);
-    const params = pathParamNames.map((name) => ({
-      name,
-      in: "path",
-      required: true,
-      schema: { type: "string" },
-      description: `Path parameter: ${name}`,
-    }));
-    const tag = tagFor(e.path);
-    tagsSet.add(tag);
-    for (const m of e.methods || []) {
-      const method = String(m || "").toLowerCase();
-      if (!["get", "post", "put", "delete", "patch"].includes(method)) continue;
-      // Inline tailored error schema and examples per operation
-      const errSchema = inlineErrorSchema(oaPath, method);
-
-      let op = {
-        tags: [tag],
-        summary: opSummary(method, e.path),
-        description:
-          defaultDescription(method, e.path),
-        security: isNoAuthPath(e.path, method) ? [] : authSecurity(),
-        parameters: [...params],
+    for (const method of methods) {
+      const hasId = /\{[a-zA-Z0-9_]+\}/.test(oaPath);
+      const op = {
+        tags: [tagFor(rawPath)],
+        summary: opSummary(method, rawPath),
+        description: defaultDescription(method, rawPath),
+        parameters: [],
         responses: {
           200: {
-            description: "Successful response",
-            content: {
-              "application/json": {
-                schema: { type: "object" },
-                examples: buildCurlExamples(e.path, method, isNoAuthPath(e.path, method)),
-              },
-            },
-          },
-          201: {
-            description: "Created",
-            content: {
-              "application/json": {
-                schema: { type: "object" },
-                examples: buildCurlExamples(e.path, method, isNoAuthPath(e.path, method)),
-              },
-            },
-          },
-          400: {
-            description: "Bad Request",
-            content: { "application/json": { schema: errSchema } },
-          },
-          401: {
-            description: "Unauthorized",
-            content: { "application/json": { schema: errSchema } },
-          },
-          403: {
-            description: "Forbidden",
-            content: { "application/json": { schema: errSchema } },
-          },
-          404: {
-            description: "Not Found",
-            content: { "application/json": { schema: errSchema } },
-          },
-          500: {
-            description: "Internal Server Error",
-            content: { "application/json": { schema: errSchema } },
+            description: "OK",
+            content: { "application/json": { schema: { type: "object" } } },
           },
         },
+        security: isNoAuthPath(rawPath, method) ? [] : authSecurity(),
       };
-
-      // Query params for lists
-      if (method === "get" && !e.path.match(/:\w+/)) {
-        op.parameters = mergeParams(op.parameters, listQueryParams());
-        // Also allow shaping controls
-        op.parameters = mergeParams(op.parameters, [fieldsParam(), expandParam()]);
-      } else {
-        // shaping controls still allowed on single GETs
-        if (method === 'get') op.parameters = mergeParams(op.parameters, [fieldsParam(), expandParam()]);
+      // Add projection query params for response shaping
+      if (["get","post","put","patch"].includes(method)) {
+        op.parameters.push(selectParam());
+        op.parameters.push(fieldsParam());
+        op.parameters.push(expandParam());
       }
-
-      // Guess response schema for success
-      op.responses[200].content["application/json"].schema = guessResponseSchema(oaPath, method);
-      if (op.responses['201']) {
-        op.responses['201'].content['application/json'].schema = guessResponseSchema(oaPath, method);
+      // List-like endpoints (no {id}) get pagination and q for GET
+      if (method === "get" && !hasId) {
+        for (const p of listQueryParams()) op.parameters.push(p);
       }
-
-      // Default request bodies for POST/PUT on common resources
-      if (["post", "put", "patch"].includes(method)) {
-        if (e.path.includes('/tokens/api-keys')) {
-          op.requestBody = {
-            required: true,
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  required: ['name'],
-                  properties: {
-                    name: { type: 'string' },
-                    scope: { type: 'string' },
-                    is_active: { type: 'boolean' },
-                    expires_at: { type: 'string', format: 'date-time', nullable: true }
-                  },
-                  additionalProperties: false
-                },
-                example: { name: 'CI Key', scope: 'system', is_active: true }
-              }
-            }
-          };
-        }
-        // Roles and permissions
-        else if (e.path.includes('/system/roles') || e.path.includes('/roles')) {
-          op.requestBody = {
-            required: true,
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/Role' } } },
-          };
-        }
-        // Users
-        else if (e.path.includes('/system/users') || e.path.includes('/users')) {
-          op.requestBody = {
-            required: true,
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/User' } } },
-          };
-        }
-        // KB articles / FAQs / Videos
-        else if (e.path.includes('/kb') || e.path.includes('/kb-articles')) {
-          op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/KBArticle' } } } };
-        }
-        else if (e.path.includes('/faqs')) {
-          op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/FAQ' } } } };
-        }
-        else if (e.path.includes('/videos')) {
-          op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Video' } } } };
-        }
-        // Systems/modules/categories
-        else if (e.path.includes('/system') || e.path.includes('/systems') || e.path.includes('/system-modules') || e.path.includes('/system-category')) {
-          // Use System / SystemModule / SystemCategory where appropriate (best-effort)
-          if (e.path.includes('/system-modules') || e.path.includes('/system/modules')) {
-            op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/SystemModule' } } } };
-          } else if (e.path.includes('/system-category') || e.path.includes('/system-categories')) {
-            op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/SystemCategory' } } } };
-          } else {
-            op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/System' } } } };
-          }
-        }
-        // Settings
-        else if (e.path.includes('/settings')) {
-          op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/SettingKV' } } } };
-        }
-        // Attachments, notes, events, watchers
-        else if (e.path.includes('/tickets/attachments') || e.path.includes('/attachments')) {
-          op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/TicketAttachment' } } } };
-        }
-        else if (e.path.includes('/tickets/notes') || e.path.includes('/notes')) {
-          op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/TicketNote' } } } };
-        }
-        else if (e.path.includes('/tickets/watchers') || e.path.includes('/watchers')) {
-          op.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/TicketWatcher' } } } };
-        }
+      // Merge overrides
+      const merged = mergeOverride(op, rawPath, method);
+      // Add minimal error responses with examples where available
+      const errs = errorExamples(rawPath, method);
+      const statusCodes = ["400", "401", "403", "404", "500"];
+      merged.responses = merged.responses || {};
+      for (const sc of statusCodes) {
+        const ex = examplesForStatus(sc, errs);
+        if (!ex) continue;
+        merged.responses[sc] = {
+          description: sc === "400" ? "Bad Request" : sc === "401" ? "Unauthorized" : sc === "403" ? "Forbidden" : sc === "404" ? "Not Found" : "Internal Server Error",
+          content: { "application/json": { examples: ex } },
+        };
       }
-
-      // Merge manual overrides (wins for requestBody, etc.)
-      op = mergeOverride(op, oaPath, method);
-
-      // Error examples tailored per path
-      const errExamples = errorExamples(oaPath, method);
-      for (const code of Object.keys(op.responses)) {
-        if (code === '200') continue;
-        const ex = examplesForStatus(code, errExamples);
-        if (ex) {
-          if (!op.responses[code].content) op.responses[code].content = {};
-          op.responses[code].content['application/json'] = op.responses[code].content['application/json'] || {};
-          op.responses[code].content['application/json'].examples = ex;
-        }
-      }
-
-      paths[oaPath][method] = op;
+      paths[oaPath][method] = merged;
     }
   }
+  // Ensure OVERRIDES-only endpoints are included (e.g., /api/info)
+  for (const [rawPath, methods] of Object.entries(OVERRIDES)) {
+    const oaPath = expressToOpenApiPath(rawPath);
+    if (!paths[oaPath]) paths[oaPath] = {};
+    for (const method of Object.keys(methods)) {
+      if (paths[oaPath][method]) continue; // already defined via express
+      const hasId = /\{[a-zA-Z0-9_]+\}/.test(oaPath);
+      const baseOp = {
+        tags: [tagFor(rawPath)],
+        summary: opSummary(method, rawPath),
+        description: defaultDescription(method, rawPath),
+        parameters: [],
+        responses: {
+          200: { description: "OK", content: { "application/json": { schema: { type: "object" } } } },
+        },
+        security: isNoAuthPath(rawPath, method) ? [] : authSecurity(),
+      };
+      if (["get","post","put","patch"].includes(method)) {
+        baseOp.parameters.push(selectParam());
+        baseOp.parameters.push(fieldsParam());
+        baseOp.parameters.push(expandParam());
+        if (method === "get" && !hasId) {
+          for (const p of listQueryParams()) baseOp.parameters.push(p);
+        }
+      }
+      const merged = mergeOverride(baseOp, rawPath, method);
+      const errs = errorExamples(rawPath, method);
+      const statusCodes = ["400", "401", "403", "404", "500"];
+      merged.responses = merged.responses || {};
+      for (const sc of statusCodes) {
+        const ex = examplesForStatus(sc, errs);
+        if (!ex) continue;
+        merged.responses[sc] = {
+          description: sc === "400" ? "Bad Request" : sc === "401" ? "Unauthorized" : sc === "403" ? "Forbidden" : sc === "404" ? "Not Found" : "Internal Server Error",
+          content: { "application/json": { examples: ex } },
+        };
+      }
+      paths[oaPath][method] = merged;
+    }
+  }
+  return paths;
+}
 
-  // Tags
-  const tags = Array.from(tagsSet).map((t) => ({ name: t }));
-
-  return {
+export default function buildOpenApi(app) {
+  const vi = getVersionInfo();
+  const longDesc = [
+    "Automatically generated OpenAPI spec based on Express routes, with manual overrides for selected endpoints.",
+    "\n\nProjection:",
+    "- Use select for bracket projection to choose nested fields and expansions in one param: select=users[id,email,roles[id,name,permissions[code]]]",
+    "- Or use fields (comma list) and expand (comma list) separately. If both are provided, select takes precedence.",
+    "- Special case: fields='*' returns full objects (bypass projection).",
+  ].join("\n");
+  const doc = {
     openapi: "3.0.3",
     info: {
-      title: "EAssist API",
-      version: "1.0.0",
-      description:
-        "Auto-generated OpenAPI specification from Express routes."
+      title: "eAssist API",
+      version: vi?.version || "0.0.0",
+      description: longDesc,
+      "x-build": vi?.build || null,
+      "x-git-sha": vi?.git_sha || null,
     },
-    servers: [{ url: "http://localhost:8080" }],
-    tags,
-    paths,
-    components,
+    servers: [ { url: "http://localhost:8080" } ],
+    paths: buildPaths(app),
+    components: {
+      securitySchemes: {
+        bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+        basicAuth: { type: "http", scheme: "basic" },
+        apiKeyAuth: { type: "apiKey", in: "header", name: "X-API-Key" },
+        cookieAuth: { type: "apiKey", in: "cookie", name: "access_token" },
+      },
+      schemas: {
+        ErrorResponseBase: {
+          type: "object",
+          properties: {
+            ok: { type: "boolean", example: false },
+            error: { type: "object", properties: { code: { type: "string" }, message: { type: "string" } } },
+            details: { type: "object", additionalProperties: true },
+            request_id: { type: "string" },
+            path: { type: "string" },
+            method: { type: "string" },
+            timestamp: { type: "string", format: "date-time" },
+          },
+        },
+        KBRatingSummary: {
+          type: "object",
+          properties: { avg: { type: "number" }, count: { type: "integer" } },
+        },
+        KBArticleTag: {
+          type: "object",
+          required: ["article_id", "tag_id"],
+          properties: { article_id: { type: "string", format: "uuid" }, tag_id: { type: "string", format: "uuid" } },
+        },
+        KBArticleTagEntry: {
+          type: "object",
+          properties: { tag_id: { type: "string", format: "uuid" }, name: { type: "string" } },
+        },
+        KBTag: { type: "object", required: ["name"], properties: { id: { type: "string", format: "uuid" }, name: { type: "string" } } },
+        KBArticle: { type: "object", required: ["title"], properties: { id: { type: "string", format: "uuid" }, title: { type: "string" }, body: { type: "string" }, is_published: { type: "boolean" }, created_at: { type: "string", format: "date-time" } } },
+        FAQ: { type: "object", required: ["title"], properties: { id: { type: "string", format: "uuid" }, title: { type: "string" }, body: { type: "string" }, is_published: { type: "boolean" }, system_category_id: { type: "integer", nullable: true }, created_at: { type: "string", format: "date-time" } } },
+        Video: { type: "object", required: ["title"], properties: { id: { type: "string", format: "uuid" }, title: { type: "string" }, description: { type: "string" }, category_id: { type: "string", format: "uuid" }, system_category_id: { type: "integer" }, url: { type: "string" }, duration_seconds: { type: "integer" }, language: { type: "string" }, is_published: { type: "boolean" }, created_at: { type: "string", format: "date-time" } } },
+        KBRating: { type: "object", required: ["article_id", "rating"], properties: { id: { type: "string", format: "uuid" }, article_id: { type: "string", format: "uuid" }, user_id: { type: "string", format: "uuid" }, rating: { type: "integer", minimum: 1, maximum: 5 }, created_at: { type: "string", format: "date-time" } } },
+        KnowledgeSearchResult: {
+          type: "object",
+          properties: {
+            faqs: { type: "array", items: { type: "object", properties: { id: { type: "string", format: "uuid" }, title: { type: "string" } } } },
+            kb: { type: "array", items: { type: "object", properties: { id: { type: "string", format: "uuid" }, title: { type: "string" } } } },
+            videos: { type: "array", items: { type: "object", properties: { id: { type: "string", format: "uuid" }, title: { type: "string" } } } },
+          },
+        },
+      },
+    },
   };
+  return doc;
 }
