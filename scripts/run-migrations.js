@@ -10,6 +10,22 @@ console.log('Loading .env from:', envPath);
 dotenv.config({ path: envPath });
 const dir = path.resolve(__dirname, "migrations");
 
+function migrationSort(a, b){
+  // Force base messages schema before its dependents if same date prefix
+  const weight = (f) => {
+    if (/messages_schema/i.test(f)) return 10; // highest priority (run earliest)
+    if (/message_providers/i.test(f)) return 5; // after schema
+    if (/message_attachments/i.test(f)) return 4; // after schema (attachments need messages)
+    if (/otp_settings/i.test(f)) return 3; // after providers (may validate providers)
+    return 0;
+  };
+  const wa = weight(a);
+  const wb = weight(b);
+  if (wa !== wb) return wb - wa < 0 ? -1 : 1; // higher weight first
+  // Fallback to lexical
+  return a.localeCompare(b);
+}
+
 async function main() {
   // Diagnostic: log DATABASE_URL and its type to debug connection issues
   console.log("DATABASE_URL (raw):", process.env.DATABASE_URL);
@@ -29,8 +45,9 @@ async function main() {
       ? fs
           .readdirSync(dir)
           .filter((f) => f.endsWith(".sql"))
-          .sort()
+          .sort(migrationSort)
       : [];
+    console.log('Planned migration order:', files.join(', '));
     for (const f of files) {
       const version = f;
       if (applied.has(version)) {

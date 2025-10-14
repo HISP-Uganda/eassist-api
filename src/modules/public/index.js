@@ -4,6 +4,7 @@ import { parsePagination } from "../../utils/pagination.js";
 import listEndpoints from "express-list-endpoints";
 import { BadRequest, NotFound } from "../../utils/errors.js";
 import { create } from "../../utils/crud.js";
+import jwt from "jsonwebtoken";
 const r = Router();
 
 // Simple health probe
@@ -444,6 +445,91 @@ r.get("/search", async (req, res, next) => {
   } catch (e) {
     next(e);
   }
+});
+
+// Optional bearer decode (non-fatal)
+function tryAuth(req){
+  if (req.user) return; // already set elsewhere
+  const h = req.headers.authorization || "";
+  if (/^bearer\s+/i.test(h)) {
+    const token = h.split(/\s+/)[1];
+    try { req.user = jwt.verify(token, process.env.JWT_SECRET || 'testsecret'); } catch (_) { /* ignore */ }
+  }
+}
+
+// Public rating endpoints (FAQs, KB Articles, Videos)
+function validateRating(val){
+  const n = Number(val);
+  if (!Number.isInteger(n) || n < 1 || n > 5) return null;
+  return n;
+}
+
+async function upsertRating(table, col, id, userId, rating){
+  const q = await pool.query(
+    `INSERT INTO ${table} (${col}, user_id, rating) VALUES ($1,$2,$3)
+     ON CONFLICT (${col}, user_id) DO UPDATE SET rating=EXCLUDED.rating, created_at=now()
+     RETURNING *`,
+    [id, userId, rating]
+  );
+  return q.rows[0];
+}
+async function summary(table, col, id){
+  const q = await pool.query(
+    `SELECT avg(rating)::numeric(10,2) AS avg, count(*)::int AS count FROM ${table} WHERE ${col}=$1`,
+    [id]
+  );
+  return q.rows[0] || { avg: null, count: 0 };
+}
+
+r.post('/faqs/:id/rate', async (req,res,next)=>{
+  try {
+    tryAuth(req);
+    const rating = validateRating(req.body?.rating);
+    if (!rating) return next(BadRequest('rating must be integer 1..5'));
+    const faqId = req.params.id;
+    const userId = req.user?.sub || null;
+    const row = await upsertRating('faq_ratings','faq_id',faqId,userId,rating);
+    const sum = await summary('faq_ratings','faq_id',faqId);
+    res.status(201).json({ rating: row, summary: sum });
+  } catch (e){ next(e); }
+});
+
+r.get('/faqs/:id/ratings/summary', async (req,res,next)=>{
+  try { const sum = await summary('faq_ratings','faq_id',req.params.id); res.json(sum); } catch (e){ next(e); }
+});
+
+r.post('/kb/articles/:id/rate', async (req,res,next)=>{
+  try {
+    tryAuth(req);
+    const rating = validateRating(req.body?.rating);
+    if (!rating) return next(BadRequest('rating must be integer 1..5'));
+    const id = req.params.id;
+    const userId = req.user?.sub || null;
+    const row = await upsertRating('kb_ratings','article_id',id,userId,rating);
+    const sum = await summary('kb_ratings','article_id',id);
+    res.status(201).json({ rating: row, summary: sum });
+  } catch (e){ next(e); }
+});
+
+r.get('/kb/articles/:id/ratings/summary', async (req,res,next)=>{
+  try { const sum = await summary('kb_ratings','article_id',req.params.id); res.json(sum); } catch (e){ next(e); }
+});
+
+r.post('/videos/:id/rate', async (req,res,next)=>{
+  try {
+    tryAuth(req);
+    const rating = validateRating(req.body?.rating);
+    if (!rating) return next(BadRequest('rating must be integer 1..5'));
+    const id = req.params.id;
+    const userId = req.user?.sub || null;
+    const row = await upsertRating('video_ratings','video_id',id,userId,rating);
+    const sum = await summary('video_ratings','video_id',id);
+    res.status(201).json({ rating: row, summary: sum });
+  } catch (e){ next(e); }
+});
+
+r.get('/videos/:id/ratings/summary', async (req,res,next)=>{
+  try { const sum = await summary('video_ratings','video_id',req.params.id); res.json(sum); } catch (e){ next(e); }
 });
 
 export default r;
