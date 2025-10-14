@@ -23,12 +23,29 @@ r.use(
 );
 // Tickets now rely on granular per-route permission checks
 r.use("/tickets", requireAuth, tickets);
-r.use(
-  "/knowledge",
-  requireAuth,
-  requirePermissions(PERMISSIONS.KNOWLEDGE_MANAGE),
-  knowledge
-);
+// Knowledge: only allow public GET for specific resources (faqs, kb/articles, videos)
+const isPublicKnowledgeGet = (req) => {
+  if (req.method !== "GET") return false;
+  const p = req.path || "";
+  return (
+    p === "/faqs" ||
+    p.startsWith("/faqs/") ||
+    p === "/kb/articles" ||
+    p.startsWith("/kb/articles/") ||
+    p === "/videos" ||
+    p.startsWith("/videos/")
+  );
+};
+r.use("/knowledge", (req, res, next) => {
+  if (isPublicKnowledgeGet(req)) {
+    return knowledge(req, res, next);
+  }
+  return requireAuth(req, res, (err) => {
+    if (err) return next(err);
+    const guard = requirePermissions(PERMISSIONS.KNOWLEDGE_MANAGE);
+    return guard(req, res, (err2) => (err2 ? next(err2) : knowledge(req, res, next)));
+  });
+});
 // Keep the rest of /system protected
 r.use("/system", requireAuth, system);
 r.use("/admin", requireAuth, admin);

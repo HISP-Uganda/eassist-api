@@ -2,6 +2,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { execSync } from "child_process";
 
 function readPackageVersion() {
   try {
@@ -16,10 +17,45 @@ function readPackageVersion() {
   }
 }
 
+function detectGitSha() {
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const repoRoot = path.resolve(__dirname, "../..");
+    const raw = execSync("git rev-parse HEAD", { cwd: repoRoot, stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+    return raw ? raw.slice(0, 40) : null;
+  } catch {
+    try {
+      // Fallback: read .git/HEAD and resolve ref
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const repoRoot = path.resolve(__dirname, "../..");
+      const headPath = path.join(repoRoot, ".git/HEAD");
+      const head = fs.readFileSync(headPath, "utf8").trim();
+      if (head.startsWith("ref:")) {
+        const ref = head.split(" ")[1];
+        const refPath = path.join(repoRoot, ".git", ref);
+        const sha = fs.readFileSync(refPath, "utf8").trim();
+        return sha ? sha.slice(0, 40) : null;
+      }
+      return head ? head.slice(0, 40) : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
 const versionCache = readPackageVersion();
+const shaCache = (() => {
+  const envSha = (process.env.GIT_SHA || "").trim();
+  if (envSha) return envSha.slice(0, 40);
+  return detectGitSha();
+})();
 
 export function getVersionInfo() {
-  const sha = (process.env.GIT_SHA || "").slice(0, 12) || null;
+  const sha = shaCache ? shaCache.slice(0, 12) : null;
   const run = process.env.GITHUB_RUN_NUMBER || null;
   const build = process.env.EASSIST_BUILD || (run ? `build.${run}` : null);
   return {
@@ -29,5 +65,3 @@ export function getVersionInfo() {
     ci_run_number: run ? Number(run) : null,
   };
 }
-
-export default { getVersionInfo };

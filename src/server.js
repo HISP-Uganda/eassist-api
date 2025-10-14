@@ -9,7 +9,7 @@ import listEndpoints from "express-list-endpoints";
 import cookieParser from "cookie-parser";
 import buildOpenApi from "./docs/openapi.js";
 import swaggerUi from "swagger-ui-express";
-import { AppError, NotFound, Internal } from "./utils/errors.js";
+import { NotFound, Internal } from "./utils/errors.js";
 import auditLogger from "./middleware/audit-logger.js";
 import { auditLog } from "./utils/logger.js";
 import { getVersionInfo } from "./utils/version.js";
@@ -80,12 +80,13 @@ app.get("/api/info", async (req, res) => {
     }
     return acc;
   }, {});
+  const buildInfo = getVersionInfo();
   const result = {
     ok: true,
-    version: "10.0.0",
+    version: buildInfo.version,
     name: "eAssist API",
     env: process.env.NODE_ENV || "development",
-    build: getVersionInfo(),
+    build: buildInfo,
     start_time: startTime.toISOString(),
     uptime_seconds: Math.round(process.uptime()),
     now: new Date().toISOString(),
@@ -271,7 +272,7 @@ app.use("/api", (req, res, next) => {
 });
 
 // Global error handler (last)
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   const status = Number(err?.status || 500);
   const code = err?.code || (status >= 500 ? "INTERNAL_ERROR" : "ERROR");
   const message = err?.message || "Internal Server Error";

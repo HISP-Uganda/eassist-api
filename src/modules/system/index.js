@@ -2,7 +2,6 @@ import { Router } from "express";
 import users from "./users/router.js";
 import roles from "./roles/router.js";
 import lookups from "./lookups/index.js";
-import agents from "./agents/index.js";
 import settings from "./settings/index.js";
 import workflows from "./workflows/index.js";
 import inbox from "./inbox/index.js";
@@ -15,8 +14,8 @@ const r = Router();
 r.use("/users", users);
 r.use("/roles", roles);
 r.use("/lookups", lookups);
-// Keep coarse guards for modules not yet migrated to granular per-route checks
-r.use("/agents", requirePermissions(PERMISSIONS.SYSTEM_MANAGE), agents);
+// Remove legacy agents endpoints; use users endpoints instead for groups/tiers management
+// r.use("/agents", requirePermissions(PERMISSIONS.SYSTEM_MANAGE), agents);
 r.use("/settings", requirePermissions(PERMISSIONS.SETTINGS_MANAGE), settings);
 r.use(
   "/workflows",

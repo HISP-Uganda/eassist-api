@@ -2,6 +2,7 @@ import { Router } from "express";
 import pool from "../../../db/pool.js";
 import { parsePagination } from "../../../utils/pagination.js";
 import { NotFound, BadRequest } from "../../../utils/errors.js";
+import { listDetailed } from "../../../utils/relations.js";
 const r = Router();
 const t = "faq_origins";
 
@@ -31,13 +32,10 @@ r.get("/", async (req, res, next) => {
       `SELECT count(*)::int c FROM ${t} ${whereSql}`,
       params
     );
-    const { rows } = await pool.query(
-      `SELECT * FROM ${t} ${whereSql} ORDER BY created_at DESC LIMIT $${
-        params.length + 1
-      } OFFSET $${params.length + 2}`,
-      [...params, limit, offset]
-    );
-    res.json({ items: rows, page, pageSize, total: tot[0]?.c || 0 });
+
+    const items = await listDetailed(t, req, 'created_at DESC', { whereSql, params, limit, offset });
+
+    res.json({ items, page, pageSize, total: tot[0]?.c || 0 });
   } catch (e) {
     next(e);
   }

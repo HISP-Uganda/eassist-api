@@ -1,0 +1,37 @@
+[Unit]
+Description=eAssist API Server
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=gitdeploy
+Group=gitdeploy
+WorkingDirectory=/opt/eassist-api
+EnvironmentFile=/opt/eassist-api/.env
+Environment="NODE_ENV=production"
+Environment="PORT=8080"
+
+# Pre-start script to ensure port is free
+ExecStartPre=/bin/sh -c 'while sudo lsof -ti:8080 >/dev/null; do echo "Port 8080 is busy, waiting..."; sudo fuser -k 8080/tcp; sleep 2; done'
+
+ExecStart=/usr/bin/node /opt/eassist-api/src/server.js
+Restart=always
+RestartSec=3
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/eassist-api/logs
+ReadWritePaths=/tmp
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=eassist-api
+
+[Install]
+WantedBy=multi-user.target

@@ -152,10 +152,142 @@ r.post(
   "/",
   requireAnyPermission(PERMISSIONS.TICKETS_CREATE, PERMISSIONS.TICKETS_MANAGE),
   async (req, res, next) => {
+    const client = await pool.connect();
     try {
-      res.status(201).json(await create(table, req.body, allow));
+      await client.query('BEGIN');
+      const body = req.body || {};
+      // Basic required fields
+      if (!body.title || !String(body.title).trim()) {
+        return next(BadRequest('title is required'));
+      }
+      // Normalize aliases from common client payloads
+      if (body.email && !body.reporter_email) body.reporter_email = body.email;
+      if (body.name && !body.full_name) body.full_name = body.name;
+      if (body.phone && !body.phone_number) body.phone_number = body.phone;
+      if (body.phoneNumber && !body.phone_number) body.phone_number = body.phoneNumber;
+
+      // Coerce integer FKs commonly sent as strings
+      const intFields = [
+        'system_id','module_id','category_id','status_id','priority_id','severity_id','source_id','group_id','tier_id'
+      ];
+      for (const f of intFields) {
+        if (Object.prototype.hasOwnProperty.call(body, f)) {
+          const v = body[f];
+          if (v === '' || v === null) { body[f] = null; continue; }
+          const n = Number(v);
+          if (Number.isFinite(n)) body[f] = Math.trunc(n);
+        }
+      }
+      // Remove unsupported field system_category_id (belongs to other tables)
+      if (Object.prototype.hasOwnProperty.call(body, 'system_category_id')) delete body.system_category_id;
+
+      // Resolve source_id if not provided
+      if (body.source_id === undefined || body.source_id === null) {
+        try {
+          let srcRow = null;
+          const explicit = body.source_code || body.source || null;
+          if (explicit && String(explicit).trim()) {
+            const code = String(explicit).trim().toLowerCase();
+            const q = await client.query(`SELECT id FROM sources WHERE lower(code)=$1 OR lower(name)=$1 LIMIT 1`, [code]);
+            srcRow = q.rows[0] || null;
+          }
+          if (!srcRow) {
+            const fallbacks = [
+              'agent_reporting','agent reporting',
+              'phone_call','phone call',
+              'email',
+              'verbal',
+              'social_media','social media',
+              'community_of_practice','community of practice','cop'
+            ];
+            for (const token of fallbacks) {
+              // eslint-disable-next-line no-await-in-loop
+              const q = await client.query(`SELECT id FROM sources WHERE lower(code)=$1 OR lower(name)=$1 LIMIT 1`, [token]);
+              if (q.rows[0]?.id != null) { srcRow = q.rows[0]; break; }
+            }
+          }
+          if (srcRow && srcRow.id != null) body.source_id = srcRow.id;
+        } catch (_) { /* ignore */ }
+      }
+
+      // Insert ticket using allow list
+      const allowedCols = [
+        "ticket_key","title","description","reporter_user_id","reporter_email","full_name","phone_number","system_id","module_id","category_id","status_id","priority_id","severity_id","source_id","assigned_agent_id","group_id","tier_id","claimed_by","claimed_at"
+      ];
+      const cols = Object.keys(body).filter(k=>allowedCols.includes(k));
+      const colNames = cols.map(c=>`"${c}"`).join(',');
+      const placeholders = cols.map((_,i)=>`$${i+1}`).join(',');
+      const ins = await client.query(
+        `INSERT INTO ${table} (${colNames}) VALUES (${placeholders}) RETURNING *`,
+        cols.map(c=>body[c])
+      );
+      const ticket = ins.rows[0];
+
+      // Optional nested creations
+      const userId = req.user?.sub || null;
+
+      // notes: [{ body, is_internal, user_id? }]
+      const notes = Array.isArray(req.body.notes) ? req.body.notes : [];
+      for (const n of notes) {
+        const nb = (n && typeof n === 'object') ? n : {};
+        if (!nb.body || !String(nb.body).trim()) continue;
+        const noteUser = nb.user_id || userId || null;
+        // eslint-disable-next-line no-await-in-loop
+        const nq = await client.query(
+          `INSERT INTO ticket_notes (ticket_id,user_id,body,is_internal) VALUES ($1,$2,$3,COALESCE($4,false)) RETURNING id`,
+          [ticket.id, noteUser, nb.body, Boolean(nb.is_internal)]
+        );
+        // eslint-disable-next-line no-await-in-loop
+        await client.query(
+          `INSERT INTO ticket_events (ticket_id,event_type,actor_user_id,details) VALUES ($1,'note_added',$2,$3::jsonb)`,
+          [ticket.id, noteUser, JSON.stringify({ note_id: nq.rows[0].id })]
+        );
+      }
+
+      // attachments: [{ file_name,file_type,file_size_bytes,storage_path, uploaded_by? }]
+      const attachments = Array.isArray(req.body.attachments) ? req.body.attachments : [];
+      for (const a of attachments) {
+        const ab = (a && typeof a === 'object') ? a : {};
+        if (!ab.file_name || !ab.file_type || !ab.storage_path || !ab.file_size_bytes) continue;
+        const uploader = ab.uploaded_by || userId || null;
+        // eslint-disable-next-line no-await-in-loop
+        const aq = await client.query(
+          `INSERT INTO ticket_attachments (ticket_id,file_name,file_type,file_size_bytes,storage_path,uploaded_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+          [ticket.id, ab.file_name, ab.file_type, ab.file_size_bytes, ab.storage_path, uploader]
+        );
+        // eslint-disable-next-line no-await-in-loop
+        await client.query(
+          `INSERT INTO ticket_events (ticket_id,event_type,actor_user_id,details) VALUES ($1,'attachment_added',$2,$3::jsonb)`,
+          [ticket.id, uploader, JSON.stringify({ attachment_id: aq.rows[0].id })]
+        );
+      }
+
+      // watchers: [{ user_id?, email?, notify? }]
+      const watchers = Array.isArray(req.body.watchers) ? req.body.watchers : [];
+      for (const w of watchers) {
+        const wb = (w && typeof w === 'object') ? w : {};
+        const u = wb.user_id || null;
+        const em = wb.email || null;
+        const nf = (wb.notify == null) ? true : !!wb.notify;
+        if (!u && !em) continue; // need at least one
+        // eslint-disable-next-line no-await-in-loop
+        await client.query(
+          `INSERT INTO ticket_watchers (ticket_id,user_id,email,notify) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+          [ticket.id, u, em, nf]
+        );
+      }
+
+      await client.query('COMMIT');
+      res.status(201).json(ticket);
     } catch (e) {
+      try { await client.query('ROLLBACK'); } catch {}
+      // Translate FK violations into 400 for a clearer client message
+      if (e && e.code === '23503') {
+        return next(BadRequest('Invalid foreign key value', { detail: e.detail }));
+      }
       next(e);
+    } finally {
+      client.release();
     }
   }
 );
@@ -639,6 +771,144 @@ r.post(
     } catch (e) {
       next(e);
     }
+  }
+);
+
+r.put(
+  "/:id/notes/:nid",
+  requireAnyPermission(
+    PERMISSIONS.TICKETS_NOTES_ADD,
+    PERMISSIONS.TICKETS_MANAGE
+  ),
+  async (req, res, next) => {
+    try {
+      const { id, nid } = req.params;
+      const fields = {};
+      if (Object.prototype.hasOwnProperty.call(req.body, 'body')) fields.body = req.body.body;
+      if (Object.prototype.hasOwnProperty.call(req.body, 'is_internal')) fields.is_internal = !!req.body.is_internal;
+      const keys = Object.keys(fields);
+      if (!keys.length) return next(BadRequest('No updatable fields provided'));
+      const sets = [];
+      const params = [];
+      let i = 0;
+      for (const k of keys) { i++; params.push(fields[k]); sets.push(`${k}=$${i}`); }
+      params.push(nid); i++; // $i is nid
+      params.push(id); i++;  // $i is ticket id
+      const sql = `UPDATE ticket_notes SET ${sets.join(', ')} WHERE id=$${i-1} AND ticket_id=$${i} RETURNING *`;
+      const { rows } = await pool.query(sql, params);
+      if (!rows[0]) return next(NotFound('Note not found'));
+      await pool.query(
+        `INSERT INTO ticket_events (ticket_id,event_type,details) VALUES ($1,'note_updated',$2::jsonb)`,
+        [id, JSON.stringify({ note_id: nid })]
+      );
+      res.json(rows[0]);
+    } catch (e) { next(e); }
+  }
+);
+
+r.delete(
+  "/:id/notes/:nid",
+  requireAnyPermission(
+    PERMISSIONS.TICKETS_NOTES_ADD,
+    PERMISSIONS.TICKETS_MANAGE
+  ),
+  async (req, res, next) => {
+    try {
+      const { id, nid } = req.params;
+      const { rows } = await pool.query(
+        `DELETE FROM ticket_notes WHERE id=$1 AND ticket_id=$2 RETURNING id`,
+        [nid, id]
+      );
+      if (!rows[0]) return next(NotFound('Note not found'));
+      await pool.query(
+        `INSERT INTO ticket_events (ticket_id,event_type,details) VALUES ($1,'note_deleted',$2::jsonb)`,
+        [id, JSON.stringify({ note_id: nid })]
+      );
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  }
+);
+
+r.put(
+  "/:id/attachments/:aid",
+  requireAnyPermission(
+    PERMISSIONS.TICKETS_ATTACHMENTS_ADD,
+    PERMISSIONS.TICKETS_MANAGE
+  ),
+  async (req, res, next) => {
+    try {
+      const { id, aid } = req.params;
+      const fields = {};
+      if (Object.prototype.hasOwnProperty.call(req.body, 'file_name')) fields.file_name = req.body.file_name;
+      if (Object.prototype.hasOwnProperty.call(req.body, 'file_type')) fields.file_type = req.body.file_type;
+      const keys = Object.keys(fields);
+      if (!keys.length) return next(BadRequest('No updatable fields provided'));
+      const sets = [];
+      const params = [];
+      let i = 0;
+      for (const k of keys) { i++; params.push(fields[k]); sets.push(`${k}=$${i}`); }
+      params.push(aid); i++;
+      params.push(id); i++;
+      const sql = `UPDATE ticket_attachments SET ${sets.join(', ')} WHERE id=$${i-1} AND ticket_id=$${i} RETURNING *`;
+      const { rows } = await pool.query(sql, params);
+      if (!rows[0]) return next(NotFound('Attachment not found'));
+      await pool.query(
+        `INSERT INTO ticket_events (ticket_id,event_type,details) VALUES ($1,'attachment_updated',$2::jsonb)`,
+        [id, JSON.stringify({ attachment_id: aid })]
+      );
+      res.json(rows[0]);
+    } catch (e) { next(e); }
+  }
+);
+
+r.delete(
+  "/:id/attachments/:aid",
+  requireAnyPermission(
+    PERMISSIONS.TICKETS_ATTACHMENTS_ADD,
+    PERMISSIONS.TICKETS_MANAGE
+  ),
+  async (req, res, next) => {
+    try {
+      const { id, aid } = req.params;
+      const { rows } = await pool.query(
+        `DELETE FROM ticket_attachments WHERE id=$1 AND ticket_id=$2 RETURNING id`,
+        [aid, id]
+      );
+      if (!rows[0]) return next(NotFound('Attachment not found'));
+      await pool.query(
+        `INSERT INTO ticket_events (ticket_id,event_type,details) VALUES ($1,'attachment_deleted',$2::jsonb)`,
+        [id, JSON.stringify({ attachment_id: aid })]
+      );
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  }
+);
+
+r.put(
+  "/:id/watchers/:wid",
+  requireAnyPermission(
+    PERMISSIONS.TICKETS_WATCHERS_ADD,
+    PERMISSIONS.TICKETS_MANAGE
+  ),
+  async (req, res, next) => {
+    try {
+      const { id, wid } = req.params;
+      const fields = {};
+      if (Object.prototype.hasOwnProperty.call(req.body, 'notify')) fields.notify = !!req.body.notify;
+      if (Object.prototype.hasOwnProperty.call(req.body, 'email')) fields.email = req.body.email;
+      const keys = Object.keys(fields);
+      if (!keys.length) return next(BadRequest('No updatable fields provided'));
+      const sets = [];
+      const params = [];
+      let i = 0;
+      for (const k of keys) { i++; params.push(fields[k]); sets.push(`${k}=$${i}`); }
+      params.push(wid); i++;
+      params.push(id); i++;
+      const sql = `UPDATE ticket_watchers SET ${sets.join(', ')} WHERE id=$${i-1} AND ticket_id=$${i} RETURNING *`;
+      const { rows } = await pool.query(sql, params);
+      if (!rows[0]) return next(NotFound('Watcher not found'));
+      res.json(rows[0]);
+    } catch (e) { next(e); }
   }
 );
 

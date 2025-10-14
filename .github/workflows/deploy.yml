@@ -1,29 +1,35 @@
 name: Deploy eAssist API
 
-run-name: Deploy eAssist API to Production (${{ github.sha }})
-
 on:
   push:
     branches: [ "releases" ]
+  release:
+    types: [ published ]
   workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deployment even if no changes'
+        required: false
+        default: 'false'
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: production-deploy
-  cancel-in-progress: true
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy and Restart API
+    name: Build and Deploy eAssist API
     runs-on: ubuntu-latest
-    if: ${{ github.ref == 'refs/heads/releases' }}
+    if: >-
+      ${{ (github.ref == 'refs/heads/releases' && github.event_name == 'push')
+          || (github.event_name == 'release' && github.event.release.target_commitish == 'releases')
+          || github.event_name == 'workflow_dispatch' }}
     env:
       DEPLOY_PATH: /opt/eassist-api
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || '194.163.173.144' }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'gitdeploy' }}
-      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
       GIT_SHA: ${{ github.sha }}
     steps:
       - name: Checkout repository
@@ -31,145 +37,124 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate prerequisites
-        run: |
-          set -euo pipefail
-          if [ -z "${{ secrets.EASSIST_API_SRV }}" ]; then
-            echo '::error::Missing required secret: EASSIST_API_SRV' >&2; exit 1;
-          fi
-          echo 'Prerequisites OK.'
+      - name: Use Node 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
 
-      - name: Prepare SSH key & known_hosts
+      - name: Show Node & npm versions
+        run: node -v && npm -v
+
+      - name: Ensure lockfile exists
         run: |
-          set -euo pipefail
+          if [ ! -f package-lock.json ]; then
+            echo "::warning::package-lock.json missing. Generating one (consider committing)."
+            npm install --package-lock-only
+          fi
+          grep -m1 'lockfileVersion' package-lock.json || true
+
+      - name: Install dependencies (prefer ci)
+        run: |
+          set -e
+          echo "Installing dependencies with npm ci"
+          if ! npm ci; then
+            echo "::warning::npm ci failed; falling back to npm install"
+            rm -rf node_modules
+            npm install
+          fi
+
+      - name: Read version
+        id: v
+        run: echo "version=$(node -e "console.log(require('./package.json').version)")" >> $GITHUB_OUTPUT
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EASSIST_API_SRV }}
+
+      - name: Configure known_hosts
+        run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.EASSIST_API_SRV }}" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          ssh-keygen -lf ~/.ssh/id_deploy | sed "s/.*/Loaded private key fingerprint: &/"
-          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" > ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 700 ~/.ssh
+          if [ -n "${{ secrets.DEPLOY_HOST_KNOWN_HOSTS || '' }}" ]; then
+            echo "${{ secrets.DEPLOY_HOST_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+          fi
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Install rsync
-        run: sudo apt-get update -y && sudo apt-get install -y rsync
-
-      - name: Sync project files to server
+      - name: Rsync files
         run: |
-          set -euo pipefail
-          RSYNC_RSH="ssh -i ~/.ssh/id_deploy -p ${DEPLOY_PORT} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          RSYNC_RSH="ssh -o StrictHostKeyChecking=yes"
           rsync -az --delete \
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='.env' \
-            -e "$RSYNC_RSH" ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
+            ./ \
+            ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/
 
-      - name: Remote Deployment (systemd-first)
-        id: remote_deploy
-        continue-on-error: true
+      - name: Remote deploy
+        env:
+          BUILD_LABEL: v${{ steps.v.outputs.version }}+ci.${{ github.run_number }}
         run: |
-          set -euo pipefail
-          ssh -i ~/.ssh/id_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "DEPLOY_PATH='${DEPLOY_PATH}' GIT_SHA='${GIT_SHA}' bash -s" <<'EOF'
-          set -euo pipefail
-          STATUS_FILE="remote_deploy_status.txt"
-          fail() { echo "$1" > "$STATUS_FILE"; echo "::error::$1"; exit 1; }
-          log() { echo "[Remote] $1"; }
-
-          # Acquire deployment lock (prevent overlapping manual runs)
-          exec 9>/tmp/eassist-api.deploy.lock
-          if ! flock -n 9; then
-            fail "Another deployment appears to be running (lock busy)";
-          fi
-
-          cd "$DEPLOY_PATH" || fail "Cannot cd to $DEPLOY_PATH"
-          log "Deploying commit: ${GIT_SHA} (current tree: $(git rev-parse HEAD || echo unknown))"
-
-          command -v node >/dev/null || fail "Node.js missing"
-          command -v npm  >/dev/null || fail "npm missing"
-          log "Node $(node -v), npm $(npm -v)"
-
-          port_listen() {
-            (sudo lsof -nP -iTCP:8080 -sTCP:LISTEN 2>/dev/null || lsof -nP -iTCP:8080 -sTCP:LISTEN 2>/dev/null) | sed 's/^/[PORT]/' || true
-          }
-          port_in_use() {
-            if (sudo lsof -nP -iTCP:8080 -sTCP:LISTEN >/dev/null 2>&1 || lsof -nP -iTCP:8080 -sTCP:LISTEN >/dev/null 2>&1); then return 0; else return 1; fi
-          }
-
-          log "Before install, port state:"; port_listen || true
-
-          log "Installing production dependencies"
-          if ! npm ci --only=production --no-audit --prefer-offline; then
-            log "npm ci failed, falling back to npm install"; npm install --only=production --no-audit || fail "Dependency install failed"; fi
-
-          log "Running migrations"
-          (npm run migrate:run || npm run migrate) || log "Migrations skipped/failed (non-fatal)"
-
-          SYSTEMD_UNIT_EXISTS=0
-          if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service --all | grep -q '^eassist-api'; then
-            SYSTEMD_UNIT_EXISTS=1
-          fi
-
-          if [ "$SYSTEMD_UNIT_EXISTS" -eq 1 ]; then
-            log "Stopping systemd service eassist-api"
-            sudo systemctl stop eassist-api 2>/dev/null || true
-            sudo systemctl kill eassist-api 2>/dev/null || true
-            sudo systemctl reset-failed eassist-api 2>/dev/null || true
-          else
-            log "No systemd unit found; will fallback to raw start"
-          fi
-
-          # Kill stray processes (nohup / manual)
-          for sig in TERM KILL; do
-            if port_in_use; then
-              log "Sending $sig to port 8080 listeners"
-              (sudo lsof -nP -iTCP:8080 -sTCP:LISTEN -t 2>/dev/null || lsof -nP -iTCP:8080 -sTCP:LISTEN -t 2>/dev/null) | xargs -r sudo kill -$sig 2>/dev/null || true
+          ssh -o StrictHostKeyChecking=yes \
+            ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} \
+            'set -euo pipefail
+            echo "[Deploy] Starting systemd-based deployment at $(date)"
+            cd ${{ env.DEPLOY_PATH }} || { echo "[Deploy] Failed to change to deploy directory"; exit 1; }
+            
+            echo "[Deploy] Installing dependencies"
+            if ! npm ci --only=production --no-audit; then
+              echo "[Deploy] npm ci failed, trying npm install"
+              npm install --only=production --no-audit || { echo "[Deploy] Failed to install dependencies"; exit 1; }
+            fi
+            
+            echo "[Deploy] Running migrations"
+            npm run migrate:run 2>/dev/null || npm run migrate 2>/dev/null || echo "[Deploy] No migrations to run or migration failed (continuing)"
+            
+            echo "[Deploy] Setting up systemd service"
+            # Copy the service file to the systemd directory
+            sudo cp ${{ env.DEPLOY_PATH }}/eassist-api.service /etc/systemd/system/eassist-api.service
+            
+            # Reload systemd to recognize the new service file
+            sudo systemctl daemon-reload
+            
+            # Enable the service to start on boot
+            sudo systemctl enable eassist-api.service
+            
+            echo "[Deploy] Restarting eassist-api service"
+            # The ExecStartPre in the service file will handle port cleanup
+            sudo systemctl restart eassist-api.service
+            
+            echo "[Deploy] Waiting for service to become active..."
+            sleep 5 # Give it a moment to start
+            
+            # Check the service status
+            if ! sudo systemctl is-active --quiet eassist-api.service; then
+              echo "[Deploy] ERROR: Service failed to start."
+              echo "[Deploy] Displaying service status and recent logs:"
+              sudo systemctl status --no-pager -l eassist-api.service || true
+              sudo journalctl -u eassist-api.service -n 50 --no-pager || true
+              exit 1
+            fi
+            
+            echo "[Deploy] ✅ Service is active. Verifying it is listening on port 8080."
+            # Final verification loop
+            for i in $(seq 1 15); do
+              if sudo ss -ltn | grep -q ":8080 "; then
+                echo "[Deploy] ✅ Service is listening on port 8080."
+                sudo systemctl status --no-pager -l eassist-api.service
+                echo "[Deploy] ✅ Deployment successful!"
+                exit 0
+              fi
+              echo "[Deploy] Waiting for port 8080 to become active... (attempt $i/15)"
               sleep 2
-            fi
-          done
-
-          if port_in_use; then
-            log "Final pre-start port listeners still present:"; port_listen; fail "Cannot free port 8080"; fi
-          log "Port 8080 free; proceeding to start"
-
-          STARTED=0; METHOD="none"
-
-          if [ "$SYSTEMD_UNIT_EXISTS" -eq 1 ]; then
-            log "Starting via systemd"
-            sudo systemctl start eassist-api || true
-            for i in $(seq 1 15); do
-              if port_in_use; then STARTED=1; METHOD="systemd"; break; fi
-              sleep 1
             done
-            if [ "$STARTED" -ne 1 ]; then
-              log "Systemd start did not bind port; status follows:"; sudo systemctl status eassist-api --no-pager || true
-              journalctl -u eassist-api -n 80 --no-pager 2>/dev/null || true
-            fi
-          fi
-
-          if [ "$STARTED" -ne 1 ]; then
-            log "Fallback: raw nohup start"
-            sudo mkdir -p /var/log 2>/dev/null || true
-            sudo touch /var/log/eassist-api.out 2>/dev/null || true
-            sudo chown "$USER" /var/log/eassist-api.out 2>/dev/null || true
-            NODE_ENV=production PORT=8080 nohup npm start >/var/log/eassist-api.out 2>&1 &
-            for i in $(seq 1 15); do
-              if port_in_use; then STARTED=1; METHOD="nohup"; break; fi
-              sleep 1
-            done
-            if [ "$STARTED" -ne 1 ]; then
-              log "Raw start failed; last 80 log lines:"; tail -n 80 /var/log/eassist-api.out 2>/dev/null || true
-              fail "Service failed to listen on port 8080"
-            fi
-          fi
-
-          log "Service started using method: $METHOD"
-          port_listen
-          echo "OK" > "$STATUS_FILE"
-          log "Deployment complete"
-          EOF
-
-      - name: Check deployment status
-        if: always()
-        run: |
-          if [ "${{ steps.remote_deploy.outcome }}" != "success" ]; then
-            echo "::error::Deployment failed. See logs above."; exit 1; fi
-          echo "Deployment completed successfully."
+            
+            echo "[Deploy] ❌ ERROR: Service started but is not listening on port 8080."
+            sudo systemctl status --no-pager -l eassist-api.service || true
+            sudo journalctl -u eassist-api.service -n 50 --no-pager || true
+            exit 1
+            '

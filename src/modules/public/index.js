@@ -3,6 +3,7 @@ import pool from "../../db/pool.js";
 import { parsePagination } from "../../utils/pagination.js";
 import listEndpoints from "express-list-endpoints";
 import { BadRequest, NotFound } from "../../utils/errors.js";
+import { create } from "../../utils/crud.js";
 const r = Router();
 
 // Simple health probe
@@ -59,6 +60,7 @@ r.get("/tickets", (req, res) => {
           title: "string",
           description: "string",
           email: "string (optional)",
+          source_code: "string (optional; defaults to Self Service)",
           system_id: "uuid (optional)",
         },
         example:
@@ -76,21 +78,96 @@ r.get("/tickets", (req, res) => {
   });
 });
 
+// Helper: resolve a source_id by explicit code/name or by candidate defaults
+async function resolveSourceId({ explicitCode, defaultCandidates = [], defaultNames = [] }) {
+  // Try explicit first if provided
+  try {
+    if (explicitCode && String(explicitCode).trim()) {
+      const code = String(explicitCode).trim().toLowerCase();
+      const q = await pool.query(
+        `SELECT id FROM sources WHERE lower(code)=$1 OR lower(name)=$1 LIMIT 1`,
+        [code]
+      );
+      if (q.rows[0]?.id != null) return q.rows[0].id;
+    }
+  } catch (_) {}
+  // Try defaults list
+  try {
+    if ((defaultCandidates?.length || 0) + (defaultNames?.length || 0)) {
+      const q = await pool.query(
+        `SELECT id FROM sources WHERE lower(code)=ANY($1) OR lower(name)=ANY($2) LIMIT 1`,
+        [
+          (defaultCandidates || []).map((s) => String(s).toLowerCase()),
+          (defaultNames || []).map((s) => String(s).toLowerCase()),
+        ]
+      );
+      if (q.rows[0]?.id != null) return q.rows[0].id;
+    }
+  } catch (_) {}
+  return undefined;
+}
+
 // Submit a ticket publicly
 r.post("/tickets", async (req, res, next) => {
   try {
-    const { email, system_id, title, description } = req.body;
+    const body = req.body || {};
+    const title = body.title && String(body.title).trim();
+    const description = body.description && String(body.description).trim();
     if (!title || !description) {
       return next(BadRequest("title and description are required"));
     }
-    const ins = await pool.query(
-      `INSERT INTO tickets (title, description, reporter_email, system_id, source_id, status_id, priority_id, severity_id)
-      VALUES ($1,$2,$3,$4,(SELECT id FROM sources WHERE code='web' LIMIT 1),(SELECT id FROM statuses WHERE code='open' LIMIT 1),(SELECT id FROM priorities WHERE code='medium' LIMIT 1),(SELECT id FROM severities WHERE code='minor' LIMIT 1))
-      RETURNING *`,
-      [title, description, email, system_id || null]
-    );
-    res.status(201).json(ins.rows[0]);
+    // Normalize aliases
+    const data = {
+      title,
+      description,
+      reporter_email: body.reporter_email || body.email || null,
+      full_name: body.full_name || body.name || null,
+      phone_number: body.phone_number || body.phone || body.phoneNumber || null,
+      system_id: body.system_id ?? null,
+      module_id: body.module_id ?? null,
+      category_id: body.category_id ?? null,
+    };
+    // Coerce integer foreign keys if provided as strings
+    for (const f of ["system_id", "module_id", "category_id"]) {
+      if (data[f] !== undefined && data[f] !== null && data[f] !== "") {
+        const n = Number(data[f]);
+        if (Number.isFinite(n)) data[f] = Math.trunc(n);
+      } else {
+        data[f] = null;
+      }
+    }
+
+    // Resolve source_id: explicit source_code if provided; else default to Self Service for public submissions with safe fallbacks
+    try {
+      const explicit = body.source_code || body.source || null;
+      const source_id = await resolveSourceId({
+        explicitCode: explicit,
+        defaultCandidates: ["self_service", "self-service", "self", "public", "portal", "web"],
+        defaultNames: ["self service", "public", "portal", "web"],
+      });
+      if (source_id != null) data.source_id = source_id;
+    } catch (_) { /* ignore, data.source_id remains unset */ }
+
+    // Allow list for public creation
+    const allow = [
+      "title",
+      "description",
+      "reporter_email",
+      "full_name",
+      "phone_number",
+      "system_id",
+      "module_id",
+      "category_id",
+      "source_id",
+    ];
+
+    const created = await create("tickets", data, allow);
+    res.status(201).json(created);
   } catch (e) {
+    // Translate FK errors to a 400 for a clearer message
+    if (e && e.code === "23503") {
+      return next(BadRequest("Invalid foreign key value", { detail: e.detail }));
+    }
     next(e);
   }
 });
