@@ -126,7 +126,7 @@ r.post("/", async (req, res, next) => {
       enriched = await readDetailed(t, 'id', base.id, req);
     } catch (_) {}
     const out = stripFkIdsVideo(enriched || base);
-    return res.status(201).json(req.query.fields ? pickFields(out, req.query.fields) : out);
+    return res.status(201).json(out);
   } catch (e) {
     next(e);
   }
@@ -142,12 +142,13 @@ r.get("/:id", async (req, res, next) => {
       .then((m) => m.readDetailed)
       .then((fn) => fn(t, "id", req.params.id, req))
       .catch(() => null);
-    if (enriched) return res.json(req.query.fields ? pickFields(stripFkIdsVideo(enriched), req.query.fields) : stripFkIdsVideo(enriched));
+    if (enriched) return res.json(stripFkIdsVideo(enriched));
 
     const { rows } = await pool.query(`SELECT * FROM ${t} WHERE id=$1`, [
       req.params.id,
     ]);
     if (!rows[0]) return next(NotFound("Video not found"));
+    // For fallback raw row, allow shallow top-level fields param only
     res.json(req.query.fields ? pickFields(rows[0], req.query.fields) : rows[0]);
   } catch (e) {
     next(e);
@@ -205,7 +206,7 @@ r.put("/:id", async (req, res, next) => {
       enriched = await readDetailed(t, 'id', base.id, req);
     } catch (_) {}
     const out = stripFkIdsVideo(enriched || base);
-    return res.json(req.query.fields ? pickFields(out, req.query.fields) : out);
+    return res.json(out);
   } catch (e) {
     next(e);
   }

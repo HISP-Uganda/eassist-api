@@ -5,7 +5,7 @@
     "version": "10.0.1",
     "description": "Automatically generated OpenAPI spec based on Express routes, with manual overrides for selected endpoints.\n\n\nProjection:\n- Use select for bracket projection to choose nested fields and expansions in one param: select=users[id,email,roles[id,name,permissions[code]]]\n- Or use fields (comma list) and expand (comma list) separately. If both are provided, select takes precedence.\n- Special case: fields='*' returns full objects (bypass projection).",
     "x-build": null,
-    "x-git-sha": "3aeb5901b56a"
+    "x-git-sha": "a313da118fbc"
   },
   "servers": [
     {
