@@ -18662,8 +18662,8 @@
         "tags": [
           "tickets/notes"
         ],
-        "summary": "List notes",
-        "description": "List notes across tickets.",
+        "summary": "GET /api/tickets/notes",
+        "description": "List notes with pagination and filtering.",
         "security": [
           {
             "bearerAuth": []
@@ -18682,23 +18682,32 @@
           {
             "name": "page",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "integer"
-            }
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Page number (1-based)"
           },
           {
             "name": "pageSize",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "integer"
-            }
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Items per page (max 100)"
           },
           {
             "name": "q",
             "in": "query",
+            "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Search query string"
           },
           {
             "name": "fields",
@@ -18717,47 +18726,6 @@
               "type": "string"
             },
             "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
-          },
-          {
-            "name": "ticket_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "user_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "is_internal",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "true",
-                "false"
-              ]
-            }
-          },
-          {
-            "name": "created_from",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            }
-          },
-          {
-            "name": "created_to",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            }
           }
         ],
         "responses": {
@@ -19015,8 +18983,8 @@
         "tags": [
           "tickets/notes"
         ],
-        "summary": "Create notes (array)",
-        "description": "Create one or more notes across tickets. Body must be an array of note objects.",
+        "summary": "POST /api/tickets/notes",
+        "description": "Create a new note.",
         "security": [
           {
             "bearerAuth": []
@@ -19287,42 +19255,8 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": [
-                    "ticket_id",
-                    "body"
-                  ],
-                  "properties": {
-                    "ticket_id": {
-                      "type": "string"
-                    },
-                    "user_id": {
-                      "type": "string",
-                      "nullable": true
-                    },
-                    "body": {
-                      "type": "string"
-                    },
-                    "is_internal": {
-                      "type": "boolean",
-                      "default": false
-                    }
-                  }
-                }
-              },
-              "example": [
-                {
-                  "ticket_id": "00000000-0000-0000-0000-000000000123",
-                  "body": "Note A"
-                },
-                {
-                  "ticket_id": "00000000-0000-0000-0000-000000000124",
-                  "body": "Note B",
-                  "is_internal": true
-                }
-              ]
+                "$ref": "#/components/schemas/TicketNote"
+              }
             }
           }
         }
@@ -20080,8 +20014,8 @@
         "tags": [
           "tickets/attachments"
         ],
-        "summary": "List attachments",
-        "description": "List attachments across tickets.",
+        "summary": "GET /api/tickets/attachments",
+        "description": "List attachments with pagination and filtering.",
         "security": [
           {
             "bearerAuth": []
@@ -20100,23 +20034,32 @@
           {
             "name": "page",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "integer"
-            }
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Page number (1-based)"
           },
           {
             "name": "pageSize",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "integer"
-            }
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Items per page (max 100)"
           },
           {
             "name": "q",
             "in": "query",
+            "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Search query string"
           },
           {
             "name": "fields",
@@ -20135,43 +20078,6 @@
               "type": "string"
             },
             "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
-          },
-          {
-            "name": "ticket_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "uploaded_by",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "file_type",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "uploaded_from",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            }
-          },
-          {
-            "name": "uploaded_to",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            }
           }
         ],
         "responses": {
@@ -20429,8 +20335,8 @@
         "tags": [
           "tickets/attachments"
         ],
-        "summary": "Create attachments (array)",
-        "description": "Create one or more attachments across tickets. Body must be an array of attachment objects.",
+        "summary": "POST /api/tickets/attachments",
+        "description": "Create a new attachment.",
         "security": [
           {
             "bearerAuth": []
@@ -20701,48 +20607,8 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": [
-                    "ticket_id",
-                    "file_name",
-                    "file_type",
-                    "file_size_bytes",
-                    "storage_path"
-                  ],
-                  "properties": {
-                    "ticket_id": {
-                      "type": "string"
-                    },
-                    "file_name": {
-                      "type": "string"
-                    },
-                    "file_type": {
-                      "type": "string"
-                    },
-                    "file_size_bytes": {
-                      "type": "integer"
-                    },
-                    "storage_path": {
-                      "type": "string"
-                    },
-                    "uploaded_by": {
-                      "type": "string",
-                      "nullable": true
-                    }
-                  }
-                }
-              },
-              "example": [
-                {
-                  "ticket_id": "00000000-0000-0000-0000-000000000123",
-                  "file_name": "a.txt",
-                  "file_type": "text/plain",
-                  "file_size_bytes": 100,
-                  "storage_path": "/store/a.txt"
-                }
-              ]
+                "$ref": "#/components/schemas/TicketAttachment"
+              }
             }
           }
         }
@@ -21500,8 +21366,8 @@
         "tags": [
           "tickets/watchers"
         ],
-        "summary": "List ticket watchers",
-        "description": "List ticket watchers across system.",
+        "summary": "GET /api/tickets/watchers",
+        "description": "List watchers with pagination and filtering.",
         "security": [
           {
             "bearerAuth": []
@@ -21520,16 +21386,23 @@
           {
             "name": "page",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "integer"
-            }
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Page number (1-based)"
           },
           {
             "name": "pageSize",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "integer"
-            }
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Items per page (max 100)"
           },
           {
             "name": "q",
@@ -21557,39 +21430,6 @@
               "type": "string"
             },
             "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
-          },
-          {
-            "name": "ticket_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "user_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "email",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "email"
-            }
-          },
-          {
-            "name": "notify",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "true",
-                "false"
-              ]
-            }
           }
         ],
         "responses": {
@@ -21847,8 +21687,8 @@
         "tags": [
           "tickets/watchers"
         ],
-        "summary": "Create watchers (array)",
-        "description": "Create one or more watchers across tickets. Body must be an array of watcher objects (each with ticket_id and either user_id or email).",
+        "summary": "POST /api/tickets/watchers",
+        "description": "Create a new watcher.",
         "security": [
           {
             "bearerAuth": []
@@ -22119,49 +21959,8 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "ticket_id": {
-                      "type": "string"
-                    },
-                    "user_id": {
-                      "type": "string",
-                      "nullable": true
-                    },
-                    "email": {
-                      "type": "string",
-                      "format": "email",
-                      "nullable": true
-                    },
-                    "notify": {
-                      "type": "boolean",
-                      "default": true
-                    }
-                  },
-                  "anyOf": [
-                    {
-                      "required": [
-                        "ticket_id",
-                        "user_id"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "ticket_id",
-                        "email"
-                      ]
-                    }
-                  ]
-                }
-              },
-              "example": [
-                {
-                  "ticket_id": "00000000-0000-0000-0000-000000000123",
-                  "email": "watch@domain.test"
-                }
-              ]
+                "$ref": "#/components/schemas/TicketWatcher"
+              }
             }
           }
         }
@@ -24533,8 +24332,8 @@
         "tags": [
           "tickets"
         ],
-        "summary": "List tickets",
-        "description": "List tickets with advanced filters and pagination.",
+        "summary": "GET /api/tickets",
+        "description": "List tickets with pagination and filtering.",
         "security": [
           {
             "bearerAuth": []
@@ -24597,179 +24396,6 @@
               "type": "string"
             },
             "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
-          },
-          {
-            "name": "ticket_key",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "Exact ticket key (e.g., HD-2025-0001)"
-          },
-          {
-            "name": "status_code",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "Filter by status code (open, pending, closed, …)"
-          },
-          {
-            "name": "priority_code",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "Filter by priority code (low, medium, high, …)"
-          },
-          {
-            "name": "severity_code",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "Filter by severity code (minor, major, …)"
-          },
-          {
-            "name": "system_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "UUID of system"
-          },
-          {
-            "name": "module_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "UUID of system module"
-          },
-          {
-            "name": "category_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "UUID of issue category"
-          },
-          {
-            "name": "status_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "UUID of status"
-          },
-          {
-            "name": "priority_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "UUID of priority"
-          },
-          {
-            "name": "severity_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "UUID of severity"
-          },
-          {
-            "name": "assigned_agent_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "UUID of assigned agent"
-          },
-          {
-            "name": "group_id",
-            "in": "query",
-            "schema": {
-              "type": "integer"
-            },
-            "description": "Support group id"
-          },
-          {
-            "name": "tier_id",
-            "in": "query",
-            "schema": {
-              "type": "integer"
-            },
-            "description": "Tier id"
-          },
-          {
-            "name": "source_id",
-            "in": "query",
-            "schema": {
-              "type": "integer"
-            },
-            "description": "Source id"
-          },
-          {
-            "name": "unassigned",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "true",
-                "false"
-              ]
-            },
-            "description": "Only tickets without assigned agent (true)"
-          },
-          {
-            "name": "reporter_email",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "email"
-            },
-            "description": "Filter by reporter email"
-          },
-          {
-            "name": "created_from",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "description": "Created at >= (ISO)"
-          },
-          {
-            "name": "created_to",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "description": "Created at <= (ISO)"
-          },
-          {
-            "name": "sort",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "created_at ASC",
-                "created_at DESC",
-                "updated_at ASC",
-                "updated_at DESC",
-                "ticket_key ASC",
-                "ticket_key DESC",
-                "priority_id ASC",
-                "priority_id DESC",
-                "severity_id ASC",
-                "severity_id DESC",
-                "status_id ASC",
-                "status_id DESC"
-              ]
-            },
-            "description": "Safe sort fields with direction"
           }
         ],
         "responses": {
@@ -25021,8 +24647,8 @@
         "tags": [
           "tickets"
         ],
-        "summary": "Create ticket (with related objects)",
-        "description": "Create a ticket and optionally include related notes, attachments, and watchers in one request.",
+        "summary": "POST /api/tickets",
+        "description": "Create a new ticket.",
         "security": [
           {
             "bearerAuth": []
@@ -25065,7 +24691,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ticket"
+                  "$ref": "#/components/schemas/TicketList"
+                },
+                "examples": {
+                  "bearerCurl": {
+                    "value": "curl -s -X POST 'http://localhost:8080/api/tickets' -H 'Authorization: Bearer $ACCESS_TOKEN' -H 'Content-Type: application/json' -d '{}'"
+                  },
+                  "apiKeyCurl": {
+                    "value": "curl -s -X POST 'http://localhost:8080/api/tickets' -H 'X-API-Key: $API_KEY' -H 'Content-Type: application/json' -d '{}'"
+                  },
+                  "basicCurl": {
+                    "value": "curl -s -X POST 'http://localhost:8080/api/tickets' -u 'user@example.com:password' -H 'Content-Type: application/json' -d '{}'"
+                  }
                 }
               }
             }
@@ -25248,189 +24885,6 @@
                     }
                   ]
                 }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "title",
-                  "description"
-                ],
-                "properties": {
-                  "title": {
-                    "type": "string"
-                  },
-                  "description": {
-                    "type": "string"
-                  },
-                  "email": {
-                    "type": "string",
-                    "format": "email",
-                    "description": "Alias for reporter_email"
-                  },
-                  "reporter_email": {
-                    "type": "string",
-                    "format": "email"
-                  },
-                  "full_name": {
-                    "type": "string"
-                  },
-                  "phone_number": {
-                    "type": "string"
-                  },
-                  "reporter_user_id": {
-                    "type": "string"
-                  },
-                  "system_id": {
-                    "type": "string"
-                  },
-                  "module_id": {
-                    "type": "string"
-                  },
-                  "category_id": {
-                    "type": "string"
-                  },
-                  "priority_id": {
-                    "type": "string"
-                  },
-                  "severity_id": {
-                    "type": "string"
-                  },
-                  "status_id": {
-                    "type": "string"
-                  },
-                  "group_id": {
-                    "type": "integer"
-                  },
-                  "tier_id": {
-                    "type": "integer"
-                  },
-                  "source_id": {
-                    "type": "integer"
-                  },
-                  "source_code": {
-                    "type": "string"
-                  },
-                  "notes": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "body"
-                      ],
-                      "properties": {
-                        "body": {
-                          "type": "string"
-                        },
-                        "is_internal": {
-                          "type": "boolean"
-                        },
-                        "user_id": {
-                          "type": "string",
-                          "nullable": true
-                        }
-                      }
-                    },
-                    "description": "Optional notes to add to the ticket."
-                  },
-                  "attachments": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "file_name",
-                        "file_type",
-                        "file_size_bytes",
-                        "storage_path"
-                      ],
-                      "properties": {
-                        "file_name": {
-                          "type": "string"
-                        },
-                        "file_type": {
-                          "type": "string"
-                        },
-                        "file_size_bytes": {
-                          "type": "integer"
-                        },
-                        "storage_path": {
-                          "type": "string"
-                        },
-                        "uploaded_by": {
-                          "type": "string",
-                          "nullable": true
-                        }
-                      }
-                    },
-                    "description": "Optional attachment records to add."
-                  },
-                  "watchers": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "user_id": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "email": {
-                          "type": "string",
-                          "format": "email",
-                          "nullable": true
-                        },
-                        "notify": {
-                          "type": "boolean",
-                          "default": true
-                        }
-                      },
-                      "anyOf": [
-                        {
-                          "required": [
-                            "user_id"
-                          ]
-                        },
-                        {
-                          "required": [
-                            "email"
-                          ]
-                        }
-                      ]
-                    },
-                    "description": "Optional watchers to subscribe to updates."
-                  }
-                },
-                "additionalProperties": false
-              },
-              "example": {
-                "title": "Printer jam",
-                "description": "Paper jam after 3 pages",
-                "reporter_email": "user@domain.test",
-                "source_code": "agent_reporting",
-                "notes": [
-                  {
-                    "body": "Initial triage",
-                    "is_internal": true
-                  }
-                ],
-                "attachments": [
-                  {
-                    "file_name": "error.jpg",
-                    "file_type": "image/jpeg",
-                    "file_size_bytes": 12345,
-                    "storage_path": "/store/x/y.jpg"
-                  }
-                ],
-                "watchers": [
-                  {
-                    "email": "watcher@domain.test"
-                  }
-                ]
               }
             }
           }
@@ -32298,8 +31752,8 @@
         "tags": [
           "system/users"
         ],
-        "summary": "Create user (supports nested roles, single tier, support_groups)",
-        "description": "Create a user. If 'roles', 'tiers', or 'support_groups' arrays are provided, they will be reconciled atomically. Users can belong to only one support tier; if tiers/support_groups are provided but no roles, the Agent role will be added automatically when available.",
+        "summary": "POST /api/system/users",
+        "description": "Create a new user.",
         "security": [
           {
             "bearerAuth": []
@@ -32564,125 +32018,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "required": [
-                  "email"
-                ],
-                "properties": {
-                  "email": {
-                    "type": "string",
-                    "format": "email"
-                  },
-                  "full_name": {
-                    "type": "string"
-                  },
-                  "phone": {
-                    "type": "string"
-                  },
-                  "password": {
-                    "type": "string",
-                    "description": "Plaintext password; hashed server-side"
-                  },
-                  "is_active": {
-                    "type": "boolean"
-                  },
-                  "roles": {
-                    "type": "array",
-                    "description": "Roles to assign. Accepts role UUIDs, codes, names, or objects with id/code/name.",
-                    "items": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "code": {
-                              "type": "string"
-                            },
-                            "name": {
-                              "type": "string"
-                            }
-                          }
-                        }
-                      ]
-                    }
-                  },
-                  "tiers": {
-                    "type": "array",
-                    "maxItems": 1,
-                    "description": "Single support tier to add. Accepts numeric IDs, names, or objects with id/name.",
-                    "items": {
-                      "oneOf": [
-                        {
-                          "type": "integer"
-                        },
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "integer"
-                            },
-                            "name": {
-                              "type": "string"
-                            }
-                          }
-                        }
-                      ]
-                    }
-                  },
-                  "support_groups": {
-                    "type": "array",
-                    "description": "Support groups to add. Accepts numeric IDs, names, or objects with id/name.",
-                    "items": {
-                      "oneOf": [
-                        {
-                          "type": "integer"
-                        },
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "integer"
-                            },
-                            "name": {
-                              "type": "string"
-                            }
-                          }
-                        }
-                      ]
-                    }
-                  }
-                },
-                "additionalProperties": false
-              },
-              "example": {
-                "email": "new.agent@example.com",
-                "full_name": "New Agent",
-                "is_active": true,
-                "roles": [
-                  "agent"
-                ],
-                "tiers": [
-                  {
-                    "name": "Tier 1"
-                  }
-                ],
-                "support_groups": [
-                  {
-                    "name": "Service Desk"
-                  },
-                  2
-                ]
+                "$ref": "#/components/schemas/User"
               }
             }
           }
@@ -36036,8 +35372,8 @@
         "tags": [
           "system/roles"
         ],
-        "summary": "Create role (supports nested permissions)",
-        "description": "Create a role. If a 'permissions' array of codes (or objects with code) is provided, permissions will be assigned atomically.",
+        "summary": "POST /api/system/roles",
+        "description": "Create a new role.",
         "security": [
           {
             "bearerAuth": []
@@ -36308,44 +35644,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "required": [
-                  "name"
-                ],
-                "properties": {
-                  "code": {
-                    "type": "string"
-                  },
-                  "name": {
-                    "type": "string"
-                  },
-                  "description": {
-                    "type": "string"
-                  },
-                  "permissions": {
-                    "type": "array",
-                    "description": "Permission codes to grant. Items may be strings or objects with a 'code' property.",
-                    "items": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "code"
-                          ]
-                        }
-                      ]
-                    }
-                  }
-                },
-                "additionalProperties": false
+                "$ref": "#/components/schemas/Role"
               }
             }
           }
@@ -54877,30 +54176,39 @@
         "tags": [
           "public/faqs"
         ],
-        "summary": "List FAQs",
-        "description": "List published FAQs.",
+        "summary": "GET /api/public/faqs",
+        "description": "List faqs with pagination and filtering.",
         "security": [],
         "parameters": [
           {
             "name": "page",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "integer"
-            }
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Page number (1-based)"
           },
           {
             "name": "pageSize",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "integer"
-            }
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Items per page (max 100)"
           },
           {
             "name": "q",
             "in": "query",
+            "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Search query string"
           },
           {
             "name": "fields",
@@ -54919,13 +54227,6 @@
               "type": "string"
             },
             "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
-          },
-          {
-            "name": "system_category_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -55443,30 +54744,39 @@
         "tags": [
           "public/kb"
         ],
-        "summary": "List public KB articles",
-        "description": "List published knowledge base articles.",
+        "summary": "GET /api/public/kb/articles",
+        "description": "List articles with pagination and filtering.",
         "security": [],
         "parameters": [
           {
             "name": "page",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "integer"
-            }
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Page number (1-based)"
           },
           {
             "name": "pageSize",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "integer"
-            }
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Items per page (max 100)"
           },
           {
             "name": "q",
             "in": "query",
+            "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Search query string"
           },
           {
             "name": "fields",
@@ -56318,30 +55628,39 @@
         "tags": [
           "public/videos"
         ],
-        "summary": "List public videos",
-        "description": "List public videos.",
+        "summary": "GET /api/public/videos",
+        "description": "List videos with pagination and filtering.",
         "security": [],
         "parameters": [
           {
             "name": "page",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "integer"
-            }
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Page number (1-based)"
           },
           {
             "name": "pageSize",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "integer"
-            }
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Items per page (max 100)"
           },
           {
             "name": "q",
             "in": "query",
+            "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Search query string"
           },
           {
             "name": "fields",
@@ -56360,21 +55679,6 @@
               "type": "string"
             },
             "description": "Comma-separated list of nested relations to expand (e.g., 'roles,roles.permissions,assigned_agent')."
-          },
-          {
-            "name": "category_id",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "UUID"
-          },
-          {
-            "name": "system_category_id",
-            "in": "query",
-            "schema": {
-              "type": "integer"
-            }
           }
         ],
         "responses": {
@@ -60423,6 +59727,140 @@
             "type": "integer"
           },
           "total": {
+            "type": "integer"
+          }
+        }
+      },
+      "KBRating": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "article_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rating": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "KBTag": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "KBArticleTag": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tag_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "article_id",
+          "tag_id"
+        ]
+      },
+      "KBArticleTagEntry": {
+        "type": "object",
+        "properties": {
+          "tag_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "KnowledgeSearchResult": {
+        "type": "object",
+        "properties": {
+          "faqs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "title": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "kb": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "title": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "videos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "title": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "KBRatingSummary": {
+        "type": "object",
+        "properties": {
+          "avg": {
+            "type": "number",
+            "nullable": true
+          },
+          "count": {
             "type": "integer"
           }
         }

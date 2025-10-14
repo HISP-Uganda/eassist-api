@@ -145,6 +145,33 @@ function mergeParams(base = [], override = []) {
   return Array.from(map.values());
 }
 
+// Helper to deep-merge responses so OVERRIDES can add examples without losing curl examples
+function mergeResponses(base = {}, override = {}) {
+  const out = { ...base };
+  for (const [code, addResp] of Object.entries(override)) {
+    const existing = out[code] || {};
+    const merged = { ...existing, ...addResp };
+    // Deep merge content -> application/json -> schema/examples
+    if (existing.content || addResp.content) {
+      merged.content = { ...(existing.content || {}) };
+      const exJson = existing.content?.['application/json'] || {};
+      const addJson = addResp.content?.['application/json'] || {};
+      const mergedJson = { ...exJson, ...addJson };
+      if (exJson.examples || addJson.examples) {
+        mergedJson.examples = { ...(exJson.examples || {}), ...(addJson.examples || {}) };
+      }
+      if (addJson.schema) {
+        mergedJson.schema = addJson.schema; // allow override of schema
+      } else if (exJson.schema) {
+        mergedJson.schema = exJson.schema;
+      }
+      merged.content['application/json'] = mergedJson;
+    }
+    out[code] = merged;
+  }
+  return out;
+}
+
 // Manual overrides per path+method (add/merge params, requestBody)
 const OVERRIDES = {
   // Knowledge public GET filters and POST bodies aligned with DB
@@ -156,6 +183,12 @@ const OVERRIDES = {
         { name: "system_category_id", in: "query", schema: { type: "integer" }, description: "Filter by system category id" },
         { name: "is_published", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Filter by publication state" },
       ],
+      responses: {
+        200: {
+          description: "List of FAQs",
+          content: { 'application/json': { examples: { payload: { value: [ { id: "00000000-0000-0000-0000-000000000001", title: "How to reset password?", body: "Use the reset link…", is_published: true, system_category_id: 1 } ] } } } }
+        }
+      }
     },
     post: {
       summary: "Create FAQ",
@@ -174,7 +207,13 @@ const OVERRIDES = {
       description: "List knowledge base articles with pagination and search.",
       parameters: [
         { name: "is_published", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Filter by publication state" }
-      ]
+      ],
+      responses: {
+        200: {
+          description: "List of KB articles",
+          content: { 'application/json': { examples: { payload: { value: [ { id: "10000000-0000-0000-0000-000000000001", title: "Printer troubleshooting", body: "Steps…", is_published: true } ] } } } }
+        }
+      }
     },
     post: {
       summary: "Create KB article",
@@ -197,6 +236,12 @@ const OVERRIDES = {
         { name: "language", in: "query", schema: { type: "string" }, description: "Filter by language" },
         { name: "is_published", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Filter by publication state" },
       ],
+      responses: {
+        200: {
+          description: "List of videos",
+          content: { 'application/json': { examples: { payload: { value: [ { id: "20000000-0000-0000-0000-000000000001", title: "How to file a ticket", url: "https://example.com/v/1", duration_seconds: 120, language: "en", is_published: true } ] } } } }
+        }
+      }
     },
     post: {
       summary: "Create video",
@@ -210,491 +255,72 @@ const OVERRIDES = {
     put: { summary: "Update video", description: "Update video by id.", requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Video' } } } } }
   },
 
-  // Tickets core list filters
-  "/api/tickets": {
+  // Knowledge search (protected by default)
+  "/api/knowledge/search": {
     get: {
+      summary: "Search knowledge",
+      description: "Search across FAQs, KB Articles, and Videos by title.",
+      parameters: [ { name: "q", in: "query", required: true, schema: { type: "string" }, description: "Search term" } ],
+      responses: {
+        200: {
+          description: "Search result buckets",
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/KnowledgeSearchResult' }, examples: { payload: { value: { faqs: [ { id: "00000000-0000-0000-0000-000000000001", title: "Password reset" } ], kb: [ { id: "10000000-0000-0000-0000-000000000001", title: "Printer troubleshooting" } ], videos: [ { id: "20000000-0000-0000-0000-000000000001", title: "Intro video" } ] } } } } }
+        }
+      }
+    }
+  },
+
+  // KB Ratings
+  "/api/knowledge/kb/ratings": {
+    get: {
+      summary: "List KB ratings",
+      description: "List KB article ratings with optional filters.",
       parameters: [
-        { name: "ticket_key", in: "query", schema: { type: "string" }, description: "Exact ticket key (e.g., HD-2025-0001)" },
-        { name: "status_code", in: "query", schema: { type: "string" }, description: "Filter by status code (open, pending, closed, …)" },
-        { name: "priority_code", in: "query", schema: { type: "string" }, description: "Filter by priority code (low, medium, high, …)" },
-        { name: "severity_code", in: "query", schema: { type: "string" }, description: "Filter by severity code (minor, major, …)" },
-        { name: "system_id", in: "query", schema: { type: "string" }, description: "UUID of system" },
-        { name: "module_id", in: "query", schema: { type: "string" }, description: "UUID of system module" },
-        { name: "category_id", in: "query", schema: { type: "string" }, description: "UUID of issue category" },
-        { name: "status_id", in: "query", schema: { type: "string" }, description: "UUID of status" },
-        { name: "priority_id", in: "query", schema: { type: "string" }, description: "UUID of priority" },
-        { name: "severity_id", in: "query", schema: { type: "string" }, description: "UUID of severity" },
-        { name: "assigned_agent_id", in: "query", schema: { type: "string" }, description: "UUID of assigned agent" },
-        { name: "group_id", in: "query", schema: { type: "integer" }, description: "Support group id" },
-        { name: "tier_id", in: "query", schema: { type: "integer" }, description: "Tier id" },
-        { name: "source_id", in: "query", schema: { type: "integer" }, description: "Source id" },
-        { name: "unassigned", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Only tickets without assigned agent (true)" },
-        { name: "reporter_email", in: "query", schema: { type: "string", format: "email" }, description: "Filter by reporter email" },
-        { name: "created_from", in: "query", schema: { type: "string", format: "date-time" }, description: "Created at >= (ISO)" },
-        { name: "created_to", in: "query", schema: { type: "string", format: "date-time" }, description: "Created at <= (ISO)" },
-        { name: "sort", in: "query", schema: { type: "string", enum: ["created_at ASC","created_at DESC","updated_at ASC","updated_at DESC","ticket_key ASC","ticket_key DESC","priority_id ASC","priority_id DESC","severity_id ASC","severity_id DESC","status_id ASC","status_id DESC"] }, description: "Safe sort fields with direction" }
-      ],
-      description: "List tickets with advanced filters and pagination.",
-      summary: "List tickets",
+        { name: "article_id", in: "query", schema: { type: "string", format: "uuid" }, description: "Filter by KB article id" },
+        { name: "user_id", in: "query", schema: { type: "string", format: "uuid" }, description: "Filter by user id" }
+      ]
     },
     post: {
-      summary: "Create ticket (with related objects)",
-      description: "Create a ticket and optionally include related notes, attachments, and watchers in one request.",
-      requestBody: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: {
-              type: 'object',
-              required: ['title','description'],
-              properties: {
-                title: { type: 'string' },
-                description: { type: 'string' },
-                email: { type: 'string', format: 'email', description: 'Alias for reporter_email' },
-                reporter_email: { type: 'string', format: 'email' },
-                full_name: { type: 'string' },
-                phone_number: { type: 'string' },
-                reporter_user_id: { type: 'string' },
-                system_id: { type: 'string' },
-                module_id: { type: 'string' },
-                category_id: { type: 'string' },
-                priority_id: { type: 'string' },
-                severity_id: { type: 'string' },
-                status_id: { type: 'string' },
-                group_id: { type: 'integer' },
-                tier_id: { type: 'integer' },
-                source_id: { type: 'integer' },
-                source_code: { type: 'string' },
-                // Nested related objects
-                notes: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    required: ['body'],
-                    properties: {
-                      body: { type: 'string' },
-                      is_internal: { type: 'boolean' },
-                      user_id: { type: 'string', nullable: true }
-                    }
-                  },
-                  description: 'Optional notes to add to the ticket.'
-                },
-                attachments: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    required: ['file_name','file_type','file_size_bytes','storage_path'],
-                    properties: {
-                      file_name: { type: 'string' },
-                      file_type: { type: 'string' },
-                      file_size_bytes: { type: 'integer' },
-                      storage_path: { type: 'string' },
-                      uploaded_by: { type: 'string', nullable: true }
-                    }
-                  },
-                  description: 'Optional attachment records to add.'
-                },
-                watchers: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      user_id: { type: 'string', nullable: true },
-                      email: { type: 'string', format: 'email', nullable: true },
-                      notify: { type: 'boolean', default: true }
-                    },
-                    anyOf: [ { required: ['user_id'] }, { required: ['email'] } ]
-                  },
-                  description: 'Optional watchers to subscribe to updates.'
-                }
-              },
-              additionalProperties: false
-            },
-            example: {
-              title: 'Printer jam',
-              description: 'Paper jam after 3 pages',
-              reporter_email: 'user@domain.test',
-              source_code: 'agent_reporting',
-              notes: [ { body: 'Initial triage', is_internal: true } ],
-              attachments: [ { file_name: 'error.jpg', file_type: 'image/jpeg', file_size_bytes: 12345, storage_path: '/store/x/y.jpg' } ],
-              watchers: [ { email: 'watcher@domain.test' } ]
-            }
-          }
-        }
-      },
-      responses: { '201': { description: 'Created', content: { 'application/json': { schema: { $ref: '#/components/schemas/Ticket' } } } } }
+      summary: "Create or update rating",
+      description: "Create a rating; on conflict (article_id,user_id) updates rating.",
+      requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/KBRating' }, example: { article_id: '10000000-0000-0000-0000-000000000001', user_id: '30000000-0000-0000-0000-000000000001', rating: 5 } } } },
+      responses: { '201': { description: 'Created/Updated', content: { 'application/json': { schema: { $ref: '#/components/schemas/KBRating' } } } } }
     }
   },
-  // Ticket actions request bodies
-  "/api/tickets/:id/assign": {
-    post: {
-      requestBody: {
-        required: true,
-        content: { "application/json": { schema: { type: "object", required: ["assigned_agent_id"], properties: { assigned_agent_id: { type: "string", description: "UUID of agent" } } } } }
-      },
-      description: "Assign a ticket to an agent by UUID.",
-      summary: "Assign ticket",
-    }
+  "/api/knowledge/kb/ratings/{id}": {
+    get: { summary: "Get rating", description: "Get a KB rating by id." },
+    put: { summary: "Update rating", description: "Update a KB rating.", requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/KBRating' } } } } },
+    delete: { summary: "Delete rating", description: "Delete a KB rating." }
   },
-  "/api/tickets/:id/status": {
-    post: {
-      requestBody: {
-        required: true,
-        content: { "application/json": { schema: { type: "object", properties: { status_id: { type: "string", nullable: true }, status_code: { type: "string", nullable: true } }, anyOf: [ { required: ["status_id"] }, { required: ["status_code"] } ] } } }
-      },
-      description: "Change the status of a ticket by id or code.",
-      summary: "Set ticket status",
-    }
-  },
-  "/api/tickets/:id/priority": {
-    post: {
-      requestBody: {
-        required: true,
-        content: { "application/json": { schema: { type: "object", properties: { priority_id: { type: "string", nullable: true }, priority_code: { type: "string", nullable: true } }, anyOf: [ { required: ["priority_id"] }, { required: ["priority_code"] } ] } } }
-      },
-      description: "Change the priority of a ticket by id or code.",
-      summary: "Set ticket priority",
-    }
-  },
-  "/api/tickets/:id/severity": {
-    post: {
-      requestBody: {
-        required: true,
-        content: { "application/json": { schema: { type: "object", properties: { severity_id: { type: "string", nullable: true }, severity_code: { type: "string", nullable: true } }, anyOf: [ { required: ["severity_id"] }, { required: ["severity_code"] } ] } } }
-      },
-      description: "Change the severity of a ticket by id or code.",
-      summary: "Set ticket severity",
-    }
-  },
-  // Ticket scoped lists include pagination/search filters
-  "/api/tickets/:id/notes": {
-    get: { parameters: [
-      { name: "page", in: "query", schema: { type: "integer", minimum: 1 } },
-      { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } },
-      { name: "is_internal", in: "query", schema: { type: "string", enum: ["true","false"] }, description: "Filter internal vs public notes" },
-      { name: "q", in: "query", schema: { type: "string" }, description: "Search body contains" }
-    ], description: "List notes for a ticket.", summary: "List ticket notes" },
-    post: {
-      summary: "Add notes (array)",
-      description: "Add one or more notes to the ticket. Body must be an array of note objects.",
-      requestBody: { required: true, content: { "application/json": { schema: { type: "array", items: { type: "object", required: ["body"], properties: { body: { type: "string" }, is_internal: { type: "boolean" }, user_id: { type: "string", nullable: true } } } } , example: [ { body: "Initial triage", is_internal: true }, { body: "Customer updated" } ] } } }
-    }
-  },
-  "/api/tickets/:id/attachments": {
-    get: { parameters: [
-      { name: "page", in: "query", schema: { type: "integer", minimum: 1 } },
-      { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } },
-      { name: "file_type", in: "query", schema: { type: "string" } },
-      { name: "q", in: "query", schema: { type: "string" }, description: "Search file_name contains" }
-    ], description: "List attachments for a ticket.", summary: "List ticket attachments" },
-    post: {
-      summary: "Add attachments (array)",
-      description: "Add one or more attachments to the ticket. Body must be an array of attachment objects.",
-      requestBody: { required: true, content: { "application/json": { schema: { type: "array", items: { type: "object", required: ["file_name","file_type","file_size_bytes","storage_path"], properties: { file_name: { type: "string" }, file_type: { type: "string" }, file_size_bytes: { type: "integer" }, storage_path: { type: "string" }, uploaded_by: { type: "string", nullable: true } } } } , example: [ { file_name: "log.txt", file_type: "text/plain", file_size_bytes: 1234, storage_path: "/store/log.txt" } ] } } }
-    }
-  },
-  "/api/tickets/:id/watchers": {
-    get: { parameters: [
-      { name: "page", in: "query", schema: { type: "integer" } },
-      { name: "pageSize", in: "query", schema: { type: "integer", maximum: 100 } },
-      { name: "notify", in: "query", schema: { type: "string", enum: ["true","false"] } }
-    ], description: "List ticket watchers for a ticket.", summary: "List ticket watchers" },
-    post: {
-      summary: "Add watchers (array)",
-      description: "Add one or more watchers to the ticket. Body must be an array of watcher objects (each with user_id or email).",
-      requestBody: { required: true, content: { "application/json": { schema: { type: "array", items: { type: "object", properties: { user_id: { type: "string", nullable: true }, email: { type: "string", format: "email", nullable: true }, notify: { type: "boolean", default: true } }, anyOf: [ { required: ["user_id"] }, { required: ["email"] } ] } } , example: [ { email: "watcher@domain.test", notify: true }, { user_id: "00000000-0000-0000-0000-000000000001" } ] } } }
-    }
-  },
-  // Top-level tickets sub-resources filters
-  "/api/tickets/notes": { get: { parameters: [
-    { name: "page", in: "query", schema: { type: "integer" } },
-    { name: "pageSize", in: "query", schema: { type: "integer" } },
-    { name: "ticket_id", in: "query", schema: { type: "string" } },
-    { name: "user_id", in: "query", schema: { type: "string" } },
-    { name: "is_internal", in: "query", schema: { type: "string", enum: ["true","false"] } },
-    { name: "q", in: "query", schema: { type: "string" } },
-    { name: "created_from", in: "query", schema: { type: "string", format: "date-time" } },
-    { name: "created_to", in: "query", schema: { type: "string", format: "date-time" } }
-  ] , description: "List notes across tickets.", summary: "List notes" }, post: { summary: "Create notes (array)", description: "Create one or more notes across tickets. Body must be an array of note objects.", requestBody: { required: true, content: { "application/json": { schema: { type: "array", items: { type: "object", required: ["ticket_id","body"], properties: { ticket_id: { type: "string" }, user_id: { type: "string", nullable: true }, body: { type: "string" }, is_internal: { type: "boolean", default: false } } } } , example: [ { ticket_id: "00000000-0000-0000-0000-000000000123", body: "Note A" }, { ticket_id: "00000000-0000-0000-0000-000000000124", body: "Note B", is_internal: true } ] } } } } },
-  "/api/tickets/attachments": { get: { parameters: [
-    { name: "page", in: "query", schema: { type: "integer" } },
-    { name: "pageSize", in: "query", schema: { type: "integer" } },
-    { name: "ticket_id", in: "query", schema: { type: "string" } },
-    { name: "uploaded_by", in: "query", schema: { type: "string" } },
-    { name: "file_type", in: "query", schema: { type: "string" } },
-    { name: "q", in: "query", schema: { type: "string" } },
-    { name: "uploaded_from", in: "query", schema: { type: "string", format: "date-time" } },
-    { name: "uploaded_to", in: "query", schema: { type: "string", format: "date-time" } }
-  ] , description: "List attachments across tickets.", summary: "List attachments" }, post: { summary: "Create attachments (array)", description: "Create one or more attachments across tickets. Body must be an array of attachment objects.", requestBody: { required: true, content: { "application/json": { schema: { type: "array", items: { type: "object", required: ["ticket_id","file_name","file_type","file_size_bytes","storage_path"], properties: { ticket_id: { type: "string" }, file_name: { type: "string" }, file_type: { type: "string" }, file_size_bytes: { type: "integer" }, storage_path: { type: "string" }, uploaded_by: { type: "string", nullable: true } } } } , example: [ { ticket_id: "00000000-0000-0000-0000-000000000123", file_name: "a.txt", file_type: "text/plain", file_size_bytes: 100, storage_path: "/store/a.txt" } ] } } } } },
-  "/api/tickets/watchers": { get: { parameters: [
-    { name: "page", in: "query", schema: { type: "integer" } },
-    { name: "pageSize", in: "query", schema: { type: "integer" } },
-    { name: "ticket_id", in: "query", schema: { type: "string" } },
-    { name: "user_id", in: "query", schema: { type: "string" } },
-    { name: "email", in: "query", schema: { type: "string", format: "email" } },
-    { name: "notify", in: "query", schema: { type: "string", enum: ["true","false"] } }
-  ] , description: "List ticket watchers across system.", summary: "List ticket watchers" }, post: { summary: "Create watchers (array)", description: "Create one or more watchers across tickets. Body must be an array of watcher objects (each with ticket_id and either user_id or email).", requestBody: { required: true, content: { "application/json": { schema: { type: "array", items: { type: "object", properties: { ticket_id: { type: "string" }, user_id: { type: "string", nullable: true }, email: { type: "string", format: "email", nullable: true }, notify: { type: "boolean", default: true } , }, anyOf: [ { required: ["ticket_id","user_id"] }, { required: ["ticket_id","email"] } ] } } , example: [ { ticket_id: "00000000-0000-0000-0000-000000000123", email: "watch@domain.test" } ] } } } } },
-  // New: ID endpoints for notes/attachments/watchers with PUT/DELETE specifics
-  "/api/tickets/notes/:id": {
-    put: {
-      summary: "Update note",
-      description: "Update a ticket note by ID.",
-      requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/TicketNote" } } } }
-    },
-    delete: {
-      summary: "Delete note",
-      description: "Delete a ticket note by ID."
-    }
-  },
-  "/api/tickets/attachments/:id": {
-    put: {
-      summary: "Update attachment",
-      description: "Update a ticket attachment by ID.",
-      requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/TicketAttachment" } } } }
-    },
-    delete: { summary: "Delete attachment", description: "Delete a ticket attachment by ID." }
-  },
-  "/api/tickets/watchers/:id": {
-    put: {
-      summary: "Update watcher",
-      description: "Update a ticket watcher by ID.",
-      requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/TicketWatcher" } } } }
-    },
-    delete: { summary: "Remove watcher", description: "Remove a ticket watcher by ID." }
-  },
-
-  // Public endpoints filters and payloads
-  "/api/public/faqs": { get: { parameters: [
-    { name: "page", in: "query", schema: { type: "integer" } },
-    { name: "pageSize", in: "query", schema: { type: "integer" } },
-    { name: "q", in: "query", schema: { type: "string" } },
-    { name: "system_category_id", in: "query", schema: { type: "string" } }
-  ] , description: "List published FAQs.", summary: "List FAQs" } },
-  "/api/public/kb/articles": { get: { parameters: [
-    { name: "page", in: "query", schema: { type: "integer" } },
-    { name: "pageSize", in: "query", schema: { type: "integer" } },
-    { name: "q", in: "query", schema: { type: "string" } }
-  ] , description: "List published knowledge base articles.", summary: "List public KB articles" } },
-  "/api/public/videos": { get: { parameters: [
-    { name: "page", in: "query", schema: { type: "integer" } },
-    { name: "pageSize", in: "query", schema: { type: "integer" } },
-    { name: "q", in: "query", schema: { type: "string" } },
-    { name: "category_id", in: "query", schema: { type: "string" }, description: "UUID" },
-    { name: "system_category_id", in: "query", schema: { type: "integer" } },
-  ] , description: "List public videos.", summary: "List public videos" } },
-
-  // System users: nested payloads (roles, tiers, support_groups)
-  "/api/system/users": {
-    post: {
-      summary: "Create user (supports nested roles, single tier, support_groups)",
-      description: "Create a user. If 'roles', 'tiers', or 'support_groups' arrays are provided, they will be reconciled atomically. Users can belong to only one support tier; if tiers/support_groups are provided but no roles, the Agent role will be added automatically when available.",
-      requestBody: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: {
-              type: 'object',
-              required: ['email'],
-              properties: {
-                email: { type: 'string', format: 'email' },
-                full_name: { type: 'string' },
-                phone: { type: 'string' },
-                password: { type: 'string', description: 'Plaintext password; hashed server-side' },
-                is_active: { type: 'boolean' },
-                roles: {
-                  type: 'array',
-                  description: "Roles to assign. Accepts role UUIDs, codes, names, or objects with id/code/name.",
-                  items: { oneOf: [ { type: 'string' }, { type: 'object', properties: { id: { type: 'string' }, code: { type: 'string' }, name: { type: 'string' } } } ] }
-                },
-                tiers: {
-                  type: 'array',
-                  maxItems: 1,
-                  description: "Single support tier to add. Accepts numeric IDs, names, or objects with id/name.",
-                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' } } } ] }
-                },
-                support_groups: {
-                  type: 'array',
-                  description: "Support groups to add. Accepts numeric IDs, names, or objects with id/name.",
-                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' } } } ] }
-                }
-              },
-              additionalProperties: false
-            },
-            example: {
-              email: 'new.agent@example.com',
-              full_name: 'New Agent',
-              is_active: true,
-              roles: ['agent'],
-              tiers: [ { name: 'Tier 1' } ],
-              support_groups: [ { name: 'Service Desk' }, 2 ]
-            }
-          }
-        }
-      }
-    }
-  },
-  "/api/system/users/:id": {
-    put: {
-      summary: "Update user (supports nested roles, single tier, support_groups)",
-      description: "Update a user. If 'roles', 'tiers', or 'support_groups' arrays are provided, they will be reconciled (add/remove) atomically. Users can belong to only one support tier; if absent, the Agent role will be added automatically when available.",
-      requestBody: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: {
-              type: 'object',
-              properties: {
-                email: { type: 'string', format: 'email' },
-                full_name: { type: 'string' },
-                phone: { type: 'string' },
-                password: { type: 'string' },
-                is_active: { type: 'boolean' },
-                roles: {
-                  type: 'array',
-                  description: "Desired roles set. Accepts role UUIDs, codes, names, or objects with id/code/name.",
-                  items: { oneOf: [ { type: 'string' }, { type: 'object', properties: { id: { type: 'string' }, code: { type: 'string' }, name: { type: 'string' } } } ] }
-                },
-                tiers: {
-                  type: 'array',
-                  maxItems: 1,
-                  description: "Desired support tier (max 1). Accepts numeric IDs, names, or objects with id/name.",
-                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' } } } ] }
-                },
-                support_groups: {
-                  type: 'array',
-                  description: "Desired support groups set. Accepts numeric IDs, names, or objects with id/name.",
-                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' } } } ] }
-                }
-              },
-              additionalProperties: false
-            },
-            example: {
-              full_name: 'Agent Updated',
-              roles: ['agent', 'kb_editor'],
-              tiers: [1],
-              support_groups: [1, { name: 'Escalations' }]
-            }
-          }
-        }
-      }
-    }
-  },
-  // New: document array support for tiers/groups subresources on users
-  "/api/system/users/:id/tiers": {
-    post: {
-      summary: "Set user tier (supports array)",
-      description: "Set or replace the user's single support tier. Accepts either a single tier id/name or a 'tiers' array; when an array is provided, only the first element is used.",
-      requestBody: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: {
-              type: 'object',
-              properties: {
-                tier_id: { type: 'integer', nullable: true },
-                tier: { type: 'string', nullable: true },
-                tier_name: { type: 'string', nullable: true },
-                tiers: {
-                  type: 'array', maxItems: 1,
-                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' } } } ] },
-                  description: 'Array form; only the first item is used.'
-                }
-              },
-              anyOf: [ { required: ['tier_id'] }, { required: ['tier'] }, { required: ['tier_name'] }, { required: ['tiers'] } ],
-              additionalProperties: false
-            },
-            example: { tiers: [ { name: 'Tier 2' } ] }
-          }
-        }
-      }
-    }
-  },
-  "/api/system/users/:id/support-groups": {
-    post: {
-      summary: "Add user to support groups (supports array)",
-      description: "Add the user to one or more support groups. Accepts a single group id/name or a 'support_groups' array.",
-      requestBody: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: {
-              type: 'object',
-              properties: {
-                group_id: { type: 'integer', nullable: true },
-                group: { type: 'string', nullable: true },
-                group_name: { type: 'string', nullable: true },
-                support_groups: {
-                  type: 'array',
-                  items: { oneOf: [ { type: 'integer' }, { type: 'string' }, { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' } } } ] },
-                  description: 'Array of groups to add.'
-                }
-              },
-              anyOf: [ { required: ['group_id'] }, { required: ['group'] }, { required: ['group_name'] }, { required: ['support_groups'] } ],
-              additionalProperties: false
-            },
-            example: { support_groups: [ { name: 'Service Desk' }, 3 ] }
-          }
-        }
-      }
+  "/api/knowledge/kb/ratings/summary": {
+    get: {
+      summary: "Rating summary",
+      description: "Return average rating and count for a KB article.",
+      parameters: [ { name: "article_id", in: "query", required: true, schema: { type: "string", format: "uuid" } } ],
+      responses: { 200: { description: 'Summary', content: { 'application/json': { schema: { $ref: '#/components/schemas/KBRatingSummary' }, examples: { payload: { value: { avg: 4.5, count: 10 } } } } } } }
     }
   },
 
-  // System roles: nested permissions on create/update
-  "/api/system/roles": {
-    post: {
-      summary: "Create role (supports nested permissions)",
-      description: "Create a role. If a 'permissions' array of codes (or objects with code) is provided, permissions will be assigned atomically.",
-      requestBody: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: {
-              type: 'object',
-              required: ['name'],
-              properties: {
-                code: { type: 'string' },
-                name: { type: 'string' },
-                description: { type: 'string' },
-                permissions: {
-                  type: 'array',
-                  description: "Permission codes to grant. Items may be strings or objects with a 'code' property.",
-                  items: { oneOf: [ { type: 'string' }, { type: 'object', properties: { code: { type: 'string' } }, required: ['code'] } ] }
-                }
-              },
-              additionalProperties: false
-            }
-          }
-        }
-      }
-    }
+  // KB Tags
+  "/api/knowledge/kb/tags": {
+    get: { summary: "List tags", description: "List KB tags.", parameters: [ { name: "q", in: "query", schema: { type: "string" }, description: "Filter by name contains" } ] },
+    post: { summary: "Create tag", description: "Create a tag.", requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/KBTag' }, example: { name: 'howto' } } } } }
   },
-  "/api/system/roles/:id": {
-    put: {
-      summary: "Update role (supports nested permissions)",
-      description: "Update a role. If a 'permissions' array is provided, the role's permissions will be reconciled (add/remove) atomically.",
-      requestBody: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: {
-              type: 'object',
-              properties: {
-                code: { type: 'string' },
-                name: { type: 'string' },
-                description: { type: 'string' },
-                permissions: {
-                  type: 'array',
-                  description: "Complete desired set of permission codes. Items may be strings or objects with 'code'.",
-                  items: { oneOf: [ { type: 'string' }, { type: 'object', properties: { code: { type: 'string' } }, required: ['code'] } ] }
-                }
-              },
-              additionalProperties: false
-            }
-          }
-        }
-      }
-    }
+  "/api/knowledge/kb/tags/{id}": {
+    get: { summary: "Get tag", description: "Get a tag by id." },
+    put: { summary: "Update tag", description: "Update tag name.", requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } } } } } },
+    delete: { summary: "Delete tag", description: "Delete a tag." }
   },
+
+  // KB Tag map
+  "/api/knowledge/kb/tag-map": {
+    get: { summary: "List article-tag mappings", description: "List mappings between articles and tags.", parameters: [ { name: "article_id", in: "query", schema: { type: "string", format: "uuid" } }, { name: "tag_id", in: "query", schema: { type: "string", format: "uuid" } } ] },
+    post: { summary: "Add mapping", description: "Map a tag to an article.", requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/KBArticleTag' }, example: { article_id: '10000000-0000-0000-0000-000000000001', tag_id: '40000000-0000-0000-0000-000000000001' } } } } },
+    delete: { summary: "Remove mapping", description: "Remove a tag from an article.", requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/KBArticleTag' }, example: { article_id: '10000000-0000-0000-0000-000000000001', tag_id: '40000000-0000-0000-0000-000000000001' } } } } }
+  },
+  "/api/knowledge/kb/tag-map/article/{articleId}": {
+    get: { summary: "List tags for article", description: "List tag_id and name for a given article.", parameters: [ { name: "articleId", in: "path", required: true, schema: { type: "string", format: "uuid" } } ], responses: { 200: { content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/KBArticleTagEntry' } }, examples: { payload: { value: [ { tag_id: '40000000-0000-0000-0000-000000000001', name: 'howto' } ] } } } } } } }
+  }
 };
 
 // Merge override settings into an operation; supports parameters, requestBody, responses, summary, description, security
@@ -714,7 +340,7 @@ function mergeOverride(op, rawPath, method) {
     next.requestBody = o.requestBody; // override wins entirely
   }
   if (o.responses) {
-    next.responses = { ...(op.responses || {}), ...o.responses };
+    next.responses = mergeResponses(op.responses || {}, o.responses);
   }
   return next;
 }
@@ -724,7 +350,6 @@ function buildCurlExamples(path, method = "get", isPublic = false) {
   const url = `http://localhost:8080${path}`;
   const m = method.toUpperCase();
   const needsBody = ["POST", "PUT", "PATCH"].includes(m);
-  // Smart example bodies for common user endpoints
   let bodyObj = null;
   if (needsBody) {
     if (path === '/api/system/users' && m === 'POST') {
@@ -781,7 +406,6 @@ function inlineErrorSchema(path, method) {
 }
 
 function errorExamples(path, method) {
-  // Provide concrete example payloads per common cases
   const base = (code, message, extras = {}) => ({
     value: {
       ok: false,
@@ -793,61 +417,35 @@ function errorExamples(path, method) {
       timestamp: "2025-09-23T12:00:00.000Z",
     },
   });
-
   if (path.includes("/tokens/api-keys") && path.match(/\{id}/)) {
     return {
-      notFound: base("NOT_FOUND", "API key not found", {
-        details: { id: "123" },
-      }),
+      notFound: base("NOT_FOUND", "API key not found", { details: { id: "123" } }),
       unauthorized: base("UNAUTHORIZED", "Authentication required"),
     };
   }
   if (path.startsWith("/api/tickets/attachments") && path.match(/\{id}/)) {
-    return {
-      notFound: base("NOT_FOUND", "Attachment not found", {
-        details: { id: "a1" },
-      }),
-    };
+    return { notFound: base("NOT_FOUND", "Attachment not found", { details: { id: "a1" } }) };
   }
-  // New: specific not founds for notes and watchers
   if (path.startsWith("/api/tickets/notes") && path.match(/\{id}/)) {
-    return {
-      notFound: base("NOT_FOUND", "Note not found", { details: { id: "n1" } }),
-    };
+    return { notFound: base("NOT_FOUND", "Note not found", { details: { id: "n1" } }) };
   }
   if (path.startsWith("/api/tickets/watchers") && path.match(/\{id}/)) {
-    return {
-      notFound: base("NOT_FOUND", "Watcher not found", { details: { id: "w1" } }),
-    };
+    return { notFound: base("NOT_FOUND", "Watcher not found", { details: { id: "w1" } }) };
   }
   if (path.startsWith("/api/tickets") && path.match(/\{id}/)) {
-    return {
-      notFound: base("NOT_FOUND", "Ticket not found", {
-        details: { id: "123" },
-      }),
-    };
+    return { notFound: base("NOT_FOUND", "Ticket not found", { details: { id: "123" } }) };
   }
   if (path.includes("/tickets/lookup")) {
     return {
-      missingReference: base("BAD_REQUEST", "reference is required", {
-        details: { params: { reference: "ticket reference/key" } },
-      }),
+      missingReference: base("BAD_REQUEST", "reference is required", { details: { params: { reference: "ticket reference/key" } } }),
       notFound: base("NOT_FOUND", "Ticket not found"),
     };
   }
   if (path.match(/\{id}/)) {
-    return {
-      notFound: base("NOT_FOUND", "Resource not found", {
-        details: { id: "123" },
-      }),
-    };
+    return { notFound: base("NOT_FOUND", "Resource not found", { details: { id: "123" } }) };
   }
   if (method === "post" && path.endsWith("/tickets")) {
-    return {
-      validation: base("BAD_REQUEST", "Validation failed", {
-        details: { missing: ["title", "description"] },
-      }),
-    };
+    return { validation: base("BAD_REQUEST", "Validation failed", { details: { missing: ["title", "description"] } }) };
   }
   return {
     badRequest: base("BAD_REQUEST", "Bad request"),
@@ -858,7 +456,6 @@ function errorExamples(path, method) {
   };
 }
 
-// Choose examples appropriate to each status code to avoid repetition
 function examplesForStatus(code, errExamples) {
   const pick = (keys) => {
     const out = {};
@@ -867,8 +464,7 @@ function examplesForStatus(code, errExamples) {
     }
     return Object.keys(out).length ? out : undefined;
   };
-  if (code === "400")
-    return pick(["validation", "missingReference", "badRequest"]);
+  if (code === "400") return pick(["validation", "missingReference", "badRequest"]);
   if (code === "401") return pick(["unauthorized"]);
   if (code === "403") return pick(["forbidden"]);
   if (code === "404") return pick(["notFound"]);
@@ -1070,6 +666,14 @@ export default function buildOpenApi(app) {
           total: { type: "integer" },
         },
       },
+
+      // Knowledge extra schemas
+      KBRating: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, article_id: { type: 'string', format: 'uuid' }, user_id: { type: 'string', format: 'uuid' }, rating: { type: 'integer', minimum: 1, maximum: 5 }, created_at: { type: 'string', format: 'date-time' } } },
+      KBTag: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string' }, created_at: { type: 'string', format: 'date-time', nullable: true } } },
+      KBArticleTag: { type: 'object', properties: { article_id: { type: 'string', format: 'uuid' }, tag_id: { type: 'string', format: 'uuid' } }, required: ['article_id','tag_id'] },
+      KBArticleTagEntry: { type: 'object', properties: { tag_id: { type: 'string', format: 'uuid' }, name: { type: 'string' } } },
+      KnowledgeSearchResult: { type: 'object', properties: { faqs: { type: 'array', items: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, title: { type: 'string' } } } }, kb: { type: 'array', items: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, title: { type: 'string' } } } }, videos: { type: 'array', items: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, title: { type: 'string' } } } } } },
+      KBRatingSummary: { type: 'object', properties: { avg: { type: 'number', nullable: true }, count: { type: 'integer' } } },
     },
   }; // close components
 
