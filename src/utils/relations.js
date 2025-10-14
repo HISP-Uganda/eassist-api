@@ -164,7 +164,9 @@ function getExpandAndFields(req){
     } catch (_) { /* ignore parse errors; fall back */ }
   }
   const expand = parseExpandParam(req?.query?.expand || '');
-  const fields = req?.query?.fields || null;
+  // Support special fields='*' to indicate "all fields" (bypass projection)
+  const rawFields = req?.query?.fields || null;
+  const fields = rawFields && String(rawFields).trim() === '*' ? null : rawFields;
   return { expand, fields };
 }
 
@@ -291,6 +293,95 @@ async function getPresentColumns(table){
   return new Set((rows||[]).map(r=>r.column_name));
 }
 
+// Collections (one-to-many) expansion map per parent table
+// Each entry: key -> { sql(idsParamIndex:number): { text, values }, parentKey: column name in result identifying parent id, order?: string }
+const COLLECTIONS_MAP = Object.freeze({
+  tickets: {
+    notes: {
+      build: (ids) => ({ text: `SELECT ticket_id AS parent_id, tn.* FROM ticket_notes tn WHERE tn.ticket_id = ANY($1::uuid[]) ORDER BY tn.created_at DESC`, values: [ids] })
+    },
+    attachments: {
+      build: (ids) => ({ text: `SELECT ticket_id AS parent_id, ta.* FROM ticket_attachments ta WHERE ta.ticket_id = ANY($1::uuid[]) ORDER BY ta.uploaded_at DESC`, values: [ids] })
+    },
+    events: {
+      build: (ids) => ({ text: `SELECT ticket_id AS parent_id, te.* FROM ticket_events te WHERE te.ticket_id = ANY($1::uuid[]) ORDER BY te.occurred_at DESC`, values: [ids] })
+    },
+    watchers: {
+      build: (ids) => ({ text: `SELECT ticket_id AS parent_id, tw.* FROM ticket_watchers tw WHERE tw.ticket_id = ANY($1::uuid[]) ORDER BY COALESCE(tw.email,'') ASC`, values: [ids] })
+    },
+  },
+  kb_articles: {
+    tags: {
+      build: (ids) => ({ text: `SELECT kat.article_id AS parent_id, t.* FROM kb_article_tags kat JOIN kb_tags t ON t.id = kat.tag_id WHERE kat.article_id = ANY($1::uuid[]) ORDER BY t.name ASC`, values: [ids] })
+    },
+    ratings: {
+      build: (ids) => ({ text: `SELECT kr.article_id AS parent_id, kr.* FROM kb_ratings kr WHERE kr.article_id = ANY($1::uuid[]) ORDER BY kr.created_at DESC`, values: [ids] })
+    }
+  },
+  faqs: {
+    origins: {
+      build: (ids) => ({ text: `SELECT fo.faq_id AS parent_id, fo.* FROM faq_origins fo WHERE fo.faq_id = ANY($1::uuid[]) ORDER BY fo.created_at DESC`, values: [ids] })
+    },
+    ratings: {
+      build: (ids) => ({ text: `SELECT fr.faq_id AS parent_id, fr.* FROM faq_ratings fr WHERE fr.faq_id = ANY($1::uuid[]) ORDER BY fr.created_at DESC`, values: [ids] })
+    }
+  },
+  videos: {
+    ratings: {
+      build: (ids) => ({ text: `SELECT vr.video_id AS parent_id, vr.* FROM video_ratings vr WHERE vr.video_id = ANY($1::uuid[]) ORDER BY vr.created_at DESC`, values: [ids] })
+    }
+  },
+  users: {
+    tiers: {
+      build: (ids) => ({ text: `SELECT tm.user_id AS parent_id, at.* FROM agent_tier_members tm JOIN agent_tiers at ON at.id = tm.tier_id WHERE tm.user_id = ANY($1::uuid[]) ORDER BY at.name ASC`, values: [ids] })
+    },
+    support_groups: {
+      build: (ids) => ({ text: `SELECT gm.user_id AS parent_id, ag.* FROM agent_group_members gm JOIN agent_groups ag ON ag.id = gm.group_id WHERE gm.user_id = ANY($1::uuid[]) ORDER BY ag.name ASC`, values: [ids] })
+    },
+    roles: {
+      build: (ids) => ({ text: `SELECT ur.user_id AS parent_id, r.* FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ANY($1::uuid[]) ORDER BY r.name ASC`, values: [ids] })
+    }
+  },
+  roles: {
+    permissions: {
+      build: (ids) => ({ text: `SELECT rp.role_id AS parent_id, p.* FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE rp.role_id = ANY($1::uuid[]) ORDER BY p.code ASC`, values: [ids] })
+    }
+  }
+});
+
+async function expandCollections(table, rows, expandTree){
+  if (!rows || !rows.length) return rows;
+  const map = COLLECTIONS_MAP[table];
+  if (!map) return rows;
+  const ids = rows.map(r => r.id).filter(Boolean);
+  if (!ids.length) return rows;
+  const wantKeys = Object.keys(map);
+  // Decide which collections to include:
+  // If expandTree is provided and requests any of these keys, include those; otherwise include all by default as requested.
+  const requestedKeys = Object.keys(expandTree || {});
+  const includeKeys = requestedKeys.length ? wantKeys.filter(k => requestedKeys.includes(k)) : wantKeys;
+  if (!includeKeys.length) return rows;
+  // For each included collection, batch load and assign
+  for (const key of includeKeys){
+    const spec = map[key];
+    if (!spec || typeof spec.build !== 'function') continue;
+    // eslint-disable-next-line no-await-in-loop
+    const q = await pool.query(spec.build(ids).text, spec.build(ids).values);
+    const grouped = new Map();
+    for (const row of q.rows){
+      const pid = row.parent_id;
+      const child = { ...row };
+      delete child.parent_id;
+      if (!grouped.has(pid)) grouped.set(pid, []);
+      grouped.get(pid).push(child);
+    }
+    for (const r of rows){
+      r[key] = grouped.get(r.id) || [];
+    }
+  }
+  return rows;
+}
+
 export async function listDetailed(table, req, order = '1 DESC', options = {}){
   // discover FK relations for this table, including specific overrides
   const presentSet = await getPresentColumns(table);
@@ -365,6 +456,9 @@ export async function listDetailed(table, req, order = '1 DESC', options = {}){
     // Also support nested user expansions on any table
     outRows = await expandNestedUserRelations(outRows, expandTree);
   }
+  // Collections (arrays)
+  outRows = await expandCollections(table, outRows, expandTree);
+
   return fields ? outRows.map(r => pickFieldsDeep(r, fields)) : outRows;
 }
 
@@ -400,22 +494,21 @@ export async function readDetailed(table, idCol, id, req){
     selectParts.push(`to_jsonb(${aAlias}) AS ${rel.key}`);
     joinParts.push(`LEFT JOIN ${rel.table} ${aAlias} ON t.${rel.col} = ${aAlias}.id`);
   }
-  const sql = `SELECT ${selectParts.join(', ')} FROM ${table} t ${joinParts.join(' ')} WHERE t.${idCol} = $1 LIMIT 1`;
+  let sql = `SELECT ${selectParts.join(', ')} FROM ${table} t ${joinParts.join(' ')} WHERE t.${idCol}=$1 LIMIT 1`;
   const { rows } = await pool.query(sql, [id]);
-  let row = rows[0];
-  if (!row) return row;
-
+  const row = rows[0] || null;
+  if (!row) return null;
   const { expand: expandTree, fields } = getExpandAndFields(req);
+  let out = row;
   if (expandTree && Object.keys(expandTree).length){
     if (table === 'users') {
-      const r = await expandUsersRows([row], expandTree);
-      row = r[0];
+      out = (await expandUsersRows([row], expandTree))[0];
     } else if (table === 'roles') {
-      const r = await expandRolesRows([row], expandTree);
-      row = r[0];
+      out = (await expandRolesRows([row], expandTree))[0];
     }
-    // Expand nested user relations inside this row
-    await expandNestedUserRelations([row], expandTree);
+    out = (await expandNestedUserRelations([out], expandTree))[0];
   }
-  return fields ? pickFieldsDeep(row, fields) : row;
+  // Collections (arrays)
+  const withColl = (await expandCollections(table, [out], expandTree))[0];
+  return fields ? pickFieldsDeep(withColl, fields) : withColl;
 }

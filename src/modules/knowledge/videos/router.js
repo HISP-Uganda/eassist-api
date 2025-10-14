@@ -3,7 +3,7 @@ import pool from "../../../db/pool.js";
 import { parsePagination } from "../../../utils/pagination.js";
 import { NotFound, BadRequest } from "../../../utils/errors.js";
 import { pickFields } from "../../../utils/crud.js";
-import { listDetailed } from "../../../utils/relations.js";
+import { listDetailed, readDetailed } from "../../../utils/relations.js";
 const r = Router();
 const t = "videos";
 
@@ -13,6 +13,13 @@ function isUuid(v) {
 }
 function isIntString(v) {
   return /^[0-9]+$/.test(String(v));
+}
+function stripFkIdsVideo(row){
+  if (!row || typeof row !== 'object') return row;
+  const out = { ...row };
+  if (Object.prototype.hasOwnProperty.call(out,'category') && Object.prototype.hasOwnProperty.call(out,'category_id')) delete out.category_id;
+  if (Object.prototype.hasOwnProperty.call(out,'system_category') && Object.prototype.hasOwnProperty.call(out,'system_category_id')) delete out.system_category_id;
+  return out;
 }
 
 r.get("/", async (req, res, next) => {
@@ -54,7 +61,8 @@ r.get("/", async (req, res, next) => {
       params
     );
 
-    const items = await listDetailed(t, req, 'created_at DESC', { whereSql, params, limit, offset });
+    const itemsRaw = await listDetailed(t, req, 'created_at DESC', { whereSql, params, limit, offset });
+    const items = itemsRaw.map(stripFkIdsVideo);
 
     res.json({ items, page, pageSize, total: tot[0]?.c || 0 });
   } catch (e) {
@@ -110,7 +118,15 @@ r.post("/", async (req, res, next) => {
       `INSERT INTO ${t} (${Object.keys(data).join(",")}) VALUES (${ph.join(",")}) RETURNING *`,
       Object.values(data)
     );
-    res.status(201).json(rows[0]);
+
+    // Re-read enriched object with relations/collections and optional projection
+    const base = rows[0];
+    let enriched = null;
+    try {
+      enriched = await readDetailed(t, 'id', base.id, req);
+    } catch (_) {}
+    const out = stripFkIdsVideo(enriched || base);
+    return res.status(201).json(req.query.fields ? pickFields(out, req.query.fields) : out);
   } catch (e) {
     next(e);
   }
@@ -126,7 +142,7 @@ r.get("/:id", async (req, res, next) => {
       .then((m) => m.readDetailed)
       .then((fn) => fn(t, "id", req.params.id, req))
       .catch(() => null);
-    if (enriched) return res.json(req.query.fields ? pickFields(enriched, req.query.fields) : enriched);
+    if (enriched) return res.json(req.query.fields ? pickFields(stripFkIdsVideo(enriched), req.query.fields) : stripFkIdsVideo(enriched));
 
     const { rows } = await pool.query(`SELECT * FROM ${t} WHERE id=$1`, [
       req.params.id,
@@ -181,7 +197,15 @@ r.put("/:id", async (req, res, next) => {
       } RETURNING *`,
       vals
     );
-    res.json(rows[0]);
+
+    const base = rows[0];
+    // Re-read enriched object with relations/collections and optional projection
+    let enriched = null;
+    try {
+      enriched = await readDetailed(t, 'id', base.id, req);
+    } catch (_) {}
+    const out = stripFkIdsVideo(enriched || base);
+    return res.json(req.query.fields ? pickFields(out, req.query.fields) : out);
   } catch (e) {
     next(e);
   }
