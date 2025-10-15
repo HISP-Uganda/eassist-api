@@ -81,14 +81,11 @@ jobs:
             echo "No EASSIST_API_ENV secret provided; will preserve existing .env on server"
           fi
 
-      - name: Remote deploy via eassistctl (nohup)
+      - name: Create remote deploy script locally
         run: |
           set -euo pipefail
-          REMOTE_ENV_PATH="${REMOTE_ENV:-}"
-          SSH_TARGET="${SSH_USER:-gitdeploy}@${SSH_HOST}"
-          SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
-          if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; fi
-          ssh $SSH_OPTS "$SSH_TARGET" bash -s -- "$REMOTE_ENV_PATH" << 'REMOTE_SCRIPT'
+          cat > remote_deploy.sh <<'SH'
+          #!/usr/bin/env bash
           set -euo pipefail
           LOG_FILE="/tmp/eassist-deploy.log"
           umask 077
@@ -148,7 +145,18 @@ jobs:
           APP_LOG="$HOME/logs/eassist-api.log"
           if [ -f "$APP_LOG" ]; then echo "== Last 200 lines of app log =="; tail -n 200 "$APP_LOG"; else echo "App log not found at $APP_LOG"; fi
           echo "== eAssist remote deploy end == $(date -Is)"
-REMOTE_SCRIPT
+          SH
+          chmod +x remote_deploy.sh
+
+      - name: Upload and run remote deploy script
+        run: |
+          set -euo pipefail
+          REMOTE_ENV_PATH="${REMOTE_ENV:-}"
+          SSH_TARGET="${SSH_USER:-gitdeploy}@${SSH_HOST}"
+          SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
+          if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; fi
+          scp $SSH_OPTS remote_deploy.sh "$SSH_TARGET:/tmp/eassist-remote-deploy.sh"
+          ssh $SSH_OPTS "$SSH_TARGET" "bash /tmp/eassist-remote-deploy.sh '$REMOTE_ENV_PATH'"
 
       - name: Fetch and print remote logs
         run: |
@@ -164,6 +172,15 @@ REMOTE_SCRIPT
           scp $SSH_OPTS "$SSH_TARGET:~/logs/eassist-api.log" ./app.log || echo "No app log fetched"
           echo "---- App log (~/logs/eassist-api.log) tail ----" || true
           (tail -n 300 app.log) || true
+
+      - name: Upload logs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eassist-deploy-logs
+          path: |
+            deploy.log
+            app.log
 
       - name: Post-deploy check (port 8080)
         run: |
