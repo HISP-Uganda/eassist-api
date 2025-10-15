@@ -161,12 +161,11 @@ start_systemd() {
 
 wait_ready() {
   log "Waiting for service on :$PORT ..."
-  # prefer curl HTTP probe; fallback to nc/ss/lsof
   for i in $(seq 1 40); do
-    # Try HTTP GET to root; any HTTP response indicates readiness
+    # Any HTTP response indicates the server is up, even if 404 on '/'
     if command -v curl >/dev/null 2>&1; then
-      if curl -fsS --max-time 2 -o /dev/null "http://127.0.0.1:${PORT}/"; then
-        log "✅ HTTP response on :$PORT"
+      if curl -sS -I --max-time 2 "http://127.0.0.1:${PORT}/" >/dev/null 2>&1; then
+        log "✅ HTTP reachable on :$PORT"
         return 0
       fi
     fi
@@ -243,7 +242,10 @@ persist_build_meta() {
   fi
 }
 
-npm_has_script() { ( cd "$DEST_DIR" && npm run -s 2>/dev/null | grep -qE "^\s*$1\b" ); }
+npm_has_script() {
+  # Robustly read scripts from package.json to avoid npm output formatting issues
+  ( cd "$DEST_DIR" && node -e "try{const s=require('./package.json').scripts||{}; for(const k of Object.keys(s)) console.log(k)}catch(e){}" 2>/dev/null | grep -qx "$1" )
+}
 
 run_migrations() {
   log "Running database migrations ..."

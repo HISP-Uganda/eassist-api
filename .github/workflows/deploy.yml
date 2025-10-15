@@ -31,6 +31,9 @@ jobs:
     env:
       DEPLOY_PATH: /opt/eassist-api
       PORT: 8080
+      SSH_HOST: ${{ secrets.DEPLOY_HOST }}
+      SSH_USER: ${{ secrets.DEPLOY_USER }}
+      SSH_PORT: ${{ secrets.DEPLOY_PORT }}
     steps:
       - name: Checkout repository (metadata only)
         uses: actions/checkout@v4
@@ -44,12 +47,17 @@ jobs:
 
       - name: Configure known_hosts
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           if [ -n "${{ secrets.DEPLOY_HOST_KNOWN_HOSTS || '' }}" ]; then
             echo "${{ secrets.DEPLOY_HOST_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
           else
-            ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+            if [ -n "${SSH_PORT:-}" ]; then
+              ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+            else
+              ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+            fi
           fi
           chmod 644 ~/.ssh/known_hosts
 
@@ -64,7 +72,11 @@ jobs:
             chmod 600 eassist-api.env
             REMOTE_ENV="/tmp/eassist-api.env.${GITHUB_RUN_NUMBER}"
             echo "REMOTE_ENV=$REMOTE_ENV" >> "$GITHUB_ENV"
-            scp -o BatchMode=yes -o StrictHostKeyChecking=yes eassist-api.env ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }}:"$REMOTE_ENV"
+            if [ -n "${SSH_PORT:-}" ]; then
+              scp -P "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes eassist-api.env "${SSH_USER:-gitdeploy}@${SSH_HOST}:$REMOTE_ENV"
+            else
+              scp -o BatchMode=yes -o StrictHostKeyChecking=yes eassist-api.env "${SSH_USER:-gitdeploy}@${SSH_HOST}:$REMOTE_ENV"
+            fi
           else
             echo "No EASSIST_API_ENV secret provided; will preserve existing .env on server"
           fi
@@ -73,25 +85,41 @@ jobs:
         run: |
           set -euo pipefail
           REMOTE_ENV_PATH="${REMOTE_ENV:-}"
-          SSH_TARGET="${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }}"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_TARGET" bash -s -- "$REMOTE_ENV_PATH" << 'REMOTE_SCRIPT'
+          SSH_TARGET="${SSH_USER:-gitdeploy}@${SSH_HOST}"
+          SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
+          if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; fi
+          ssh $SSH_OPTS "$SSH_TARGET" bash -s -- "$REMOTE_ENV_PATH" << 'REMOTE_SCRIPT'
           set -euo pipefail
+          LOG_FILE="/tmp/eassist-deploy.log"
+          umask 077
+          exec > >(tee -a "$LOG_FILE") 2>&1
+          echo "== eAssist remote deploy start == $(date -Is)"
+
           DEST_DIR='${{ env.DEPLOY_PATH }}'
           PORT='${{ env.PORT }}'
           REF='origin/releases'
           REMOTE_ENV_INPUT="${1:-}"
 
-          # Ensure prerequisites
-          if ! command -v git >/dev/null 2>&1; then sudo apt-get update -y && sudo apt-get install -y git; fi
-          if ! command -v node >/dev/null 2>&1; then curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs; fi
-          if ! command -v npm >/dev/null 2>&1; then sudo apt-get install -y npm; fi
+          echo "Using DEST_DIR=$DEST_DIR PORT=$PORT REF=$REF"
+          echo "REMOTE_ENV_INPUT=${REMOTE_ENV_INPUT:-<none>}"
 
           # Ensure DEST_DIR exists and is owned by current user
-          sudo mkdir -p "$DEST_DIR" && sudo chown -R "$USER:$USER" "$DEST_DIR"
+          if [ ! -d "$DEST_DIR" ]; then sudo mkdir -p "$DEST_DIR" 2>/dev/null || mkdir -p "$DEST_DIR"; fi
+          (sudo chown -R "$USER:$USER" "$DEST_DIR" 2>/dev/null || true)
+
+          # Best-effort prerequisites if passwordless sudo available; otherwise skip
+          if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            if ! command -v git >/dev/null 2>&1; then sudo apt-get update -y && sudo apt-get install -y git; fi
+            if ! command -v node >/dev/null 2>&1; then curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs; fi
+            if ! command -v npm >/dev/null 2>&1; then sudo apt-get install -y npm; fi
+          else
+            echo "[WARN] Skipping prerequisite installs (no passwordless sudo). Ensure git/node/npm are installed."
+          fi
 
           # Clone repo to a temp dir and run eassistctl from there to deploy into DEST_DIR (overlay-preserving .env)
           TMPDIR=""
           if command -v mktemp >/dev/null 2>&1; then TMPDIR=$(mktemp -d) || true; else TMPDIR="/tmp/eassistctl.$$"; mkdir -p "$TMPDIR"; fi
+          echo "TMPDIR=$TMPDIR"
           git clone --depth 1 https://github.com/HISP-Uganda/eassist-api.git "$TMPDIR/src"
           chmod +x "$TMPDIR/src/bin/eassistctl.sh" 2>/dev/null || true
 
@@ -102,14 +130,44 @@ jobs:
           elif [ -f "$DEST_DIR/.env" ]; then
             ENV_FILE="$DEST_DIR/.env"
           fi
+          echo "ENV_FILE=${ENV_FILE:-<none>}"
 
+          echo "== Running eassistctl deploy =="
           if [ -n "$ENV_FILE" ]; then
             "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup --env-file "$ENV_FILE"
           else
             "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup
           fi
-          REMOTE_SCRIPT
+
+          echo "== Post-deploy checks =="
+          if command -v ss >/dev/null 2>&1; then ss -ltn | (grep ":$PORT" || true); fi
+          if command -v curl >/dev/null 2>&1; then
+            echo "HTTP probe: / -> (may 404)"; (curl -i --max-time 5 http://127.0.0.1:"$PORT"/ || true)
+            echo "HTTP probe: /api/info"; (curl -i --max-time 5 http://127.0.0.1:"$PORT"/api/info || true)
+          fi
+          APP_LOG="$HOME/logs/eassist-api.log"
+          if [ -f "$APP_LOG" ]; then echo "== Last 200 lines of app log =="; tail -n 200 "$APP_LOG"; else echo "App log not found at $APP_LOG"; fi
+          echo "== eAssist remote deploy end == $(date -Is)"
+REMOTE_SCRIPT
+
+      - name: Fetch and print remote logs
+        run: |
+          set -euo pipefail
+          SSH_TARGET="${{ env.SSH_USER || 'gitdeploy' }}@${{ env.SSH_HOST }}"
+          SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
+          if [ -n "${{ env.SSH_PORT }}" ]; then SSH_OPTS="$SSH_OPTS -p ${{ env.SSH_PORT }}"; fi
+          # Fetch deploy log
+          scp $SSH_OPTS "$SSH_TARGET:/tmp/eassist-deploy.log" ./deploy.log || echo "No remote deploy log found"
+          echo "---- Remote deploy log (/tmp/eassist-deploy.log) ----" || true
+          (sed -e 's/[[:cntrl:]]\[[0-9;]*m//g' deploy.log | tail -n 1000) || true
+          # Fetch app log
+          scp $SSH_OPTS "$SSH_TARGET:~/logs/eassist-api.log" ./app.log || echo "No app log fetched"
+          echo "---- App log (~/logs/eassist-api.log) tail ----" || true
+          (tail -n 300 app.log) || true
 
       - name: Post-deploy check (port 8080)
         run: |
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} "ss -ltn | grep -q ':${{ env.PORT }} ' && echo 'API listening on ${{ env.PORT }}' || (echo 'No listener on ${{ env.PORT }}' && exit 1)"
+          set -euo pipefail
+          SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
+          if [ -n "${{ env.SSH_PORT }}" ]; then SSH_OPTS="$SSH_OPTS -p ${{ env.SSH_PORT }}"; fi
+          ssh $SSH_OPTS ${{ env.SSH_USER || 'gitdeploy' }}@${{ env.SSH_HOST }} "ss -ltn | grep -q ':${{ env.PORT }} ' && echo 'API listening on ${{ env.PORT }}' || (echo 'No listener on ${{ env.PORT }}' && exit 1)"
