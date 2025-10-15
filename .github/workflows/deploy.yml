@@ -2,7 +2,7 @@ name: Deploy eAssist API
 
 on:
   push:
-    branches: [ "main", "releases" ]
+    branches: [ "releases" ]
   release:
     types: [ published ]
   workflow_dispatch:
@@ -25,8 +25,8 @@ jobs:
     name: Build and Deploy eAssist API
     runs-on: ubuntu-latest
     if: >-
-      ${{ ((github.ref == 'refs/heads/releases' || github.ref == 'refs/heads/main') && github.event_name == 'push')
-          || (github.event_name == 'release' && (github.event.release.target_commitish == 'releases' || github.event.release.target_commitish == 'main'))
+      ${{ (github.ref == 'refs/heads/releases' && github.event_name == 'push')
+          || (github.event_name == 'release' && github.event.release.target_commitish == 'releases')
           || github.event_name == 'workflow_dispatch' }}
     env:
       DEPLOY_PATH: /opt/eassist-api
@@ -70,37 +70,23 @@ jobs:
           fi
 
       - name: Remote deploy via eassistctl (nohup)
-        env:
-          REMOTE_ENV: ${{ env.REMOTE_ENV }}
         run: |
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} 'set -euo pipefail
-            DEST_DIR="'"${{ env.DEPLOY_PATH }}"'"
-            PORT="'"${{ env.PORT }}"'"
-            REF="origin/releases"; [ "'"${GITHUB_REF_NAME}"'" = "main" ] && REF="origin/main"
-
+          REMOTE_ENV_PATH="${REMOTE_ENV:-}"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} "set -euo pipefail;
+            DEST_DIR='${{ env.DEPLOY_PATH }}'; PORT='${{ env.PORT }}'; REF='origin/releases'; REMOTE_ENV='${REMOTE_ENV_PATH}';
             # Ensure prerequisites
             if ! command -v git >/dev/null 2>&1; then sudo apt-get update -y && sudo apt-get install -y git; fi
             if ! command -v node >/dev/null 2>&1; then curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs; fi
             if ! command -v npm >/dev/null 2>&1; then sudo apt-get install -y npm; fi
-
-            # Prepare directory and ownership for current user
-            sudo mkdir -p "$DEST_DIR"
-            sudo chown -R "$USER:$USER" "$DEST_DIR"
-
-            # Bootstrap repo if missing (so eassistctl exists)
-            if [ ! -d "$DEST_DIR/.git" ]; then
-              git clone https://github.com/HISP-Uganda/eassist-api.git "$DEST_DIR"
-            fi
-            chmod +x "$DEST_DIR/bin/eassistctl.sh" 2>/dev/null || true
-
-            # Apply .env if uploaded
-            ENV_ARG=""
-            if [ -n "'"${REMOTE_ENV:-}"'" ] && [ -f "'"${REMOTE_ENV:-}"'" ]; then
-              ENV_ARG="--env-file '"${REMOTE_ENV}"'"
-            fi
-
-            # Deploy using eassistctl (nohup to avoid sudo/systemd)
-            "$DEST_DIR/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup $ENV_ARG
+            # Ensure DEST_DIR exists and is owned by current user
+            sudo mkdir -p "$DEST_DIR" && sudo chown -R "$USER:$USER" "$DEST_DIR"
+            # Clone repo to a temp dir and run eassistctl from there to deploy into DEST_DIR (overlay-preserving .env)
+            TMPDIR=
+            if command -v mktemp >/dev/null 2>&1; then TMPDIR=$(mktemp -d) || true; else TMPDIR="/tmp/eassistctl.$$"; mkdir -p "$TMPDIR"; fi
+            git clone --depth 1 https://github.com/HISP-Uganda/eassist-api.git "$TMPDIR/src"
+            chmod +x "$TMPDIR/src/bin/eassistctl.sh" 2>/dev/null || true
+            ENV_ARG=""; if [ -n "${REMOTE_ENV:-}" ] && [ -f "${REMOTE_ENV:-}" ]; then ENV_ARG="--env-file '${REMOTE_ENV}'"; fi
+            "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup $ENV_ARG
           '
 
       - name: Post-deploy check (port 8080)

@@ -288,25 +288,54 @@ case "$CMD" in
 
   deploy)
     require_cmd git; require_cmd npm
-    # Apply env file if provided
+    # Apply env file if provided (prefer non-sudo copy; fallback to sudo if necessary)
     if [ -n "$ENV_FILE" ]; then
-      [ -f "$ENV_FILE" ] || { err "--env-file not found: $ENV_FILE"; exit 1; }
-      sudo cp "$ENV_FILE" "$DEST_DIR/.env"
-      sudo chown "$(whoami):$(id -gn)" "$DEST_DIR/.env" || true
+      if [ -f "$ENV_FILE" ]; then
+        if cp "$ENV_FILE" "$DEST_DIR/.env" 2>/dev/null; then :; else
+          if exists sudo; then sudo cp "$ENV_FILE" "$DEST_DIR/.env" && sudo chown "$(whoami):$(id -gn)" "$DEST_DIR/.env"; else
+            err "Cannot write $DEST_DIR/.env and sudo is unavailable"; exit 1; fi
+        fi
+      else
+        err "--env-file not found: $ENV_FILE"; exit 1
+      fi
     fi
-    # Checkout ref
+    # Checkout/update code
     if [ -d "$DEST_DIR/.git" ]; then
       log "Fetching and checking out $REF in $DEST_DIR"
       git -C "$DEST_DIR" fetch --all --prune --tags
       if git -C "$DEST_DIR" rev-parse --verify -q "$REF" >/dev/null 2>&1; then
         git -C "$DEST_DIR" reset --hard "$REF"
       else
-        git -C "$DEST_DIR" reset --hard "origin/${REF}"
+        git -C "$DEST_DIR" reset --hard "origin/${REF}" || true
       fi
     else
-      log "Not a git repo; cloning fresh"
-      git clone "$REPO_URL" "$DEST_DIR"
-      git -C "$DEST_DIR" reset --hard "$REF" || git -C "$DEST_DIR" reset --hard "origin/${REF}" || true
+      # Overlay mode: clone to a temp dir and sync into DEST_DIR, preserving .env
+      log "Overlaying code into $DEST_DIR (no .git found); preserving .env"
+      tmpdir=$(mktemp -d 2>/dev/null || mktemp -d -t eassist)
+      trap 'rm -rf "$tmpdir" || true' EXIT
+      git clone "$REPO_URL" "$tmpdir/src"
+      git -C "$tmpdir/src" fetch --all --prune --tags || true
+      if git -C "$tmpdir/src" rev-parse --verify -q "$REF" >/dev/null 2>&1; then
+        git -C "$tmpdir/src" reset --hard "$REF"
+      else
+        git -C "$tmpdir/src" reset --hard "origin/${REF}" || true
+      fi
+      # Preserve existing env if not just replaced via --env-file
+      had_env=false
+      if [ -f "$DEST_DIR/.env" ] && [ -z "$ENV_FILE" ]; then
+        cp "$DEST_DIR/.env" "$tmpdir/.env.backup" || true
+        had_env=true
+      fi
+      mkdir -p "$DEST_DIR"
+      if exists rsync; then
+        rsync -a --delete --exclude ".git" --exclude ".env" "$tmpdir/src/" "$DEST_DIR/"
+      else
+        # Fallback copy; cannot easily exclude .env -> restore backup later
+        cp -a "$tmpdir/src/." "$DEST_DIR/"
+      fi
+      if [ "$had_env" = true ] && [ -f "$tmpdir/.env.backup" ]; then
+        cp "$tmpdir/.env.backup" "$DEST_DIR/.env" || true
+      fi
     fi
     # Install deps
     if [ -f "$DEST_DIR/package-lock.json" ]; then
@@ -318,7 +347,7 @@ case "$CMD" in
     fi
     ensure_env_and_port
     persist_build_meta
-    stop_service
+    stop_service || warn "Stop may have failed; proceeding"
     run_migrations
     if [ "$RUN_SEED" -eq 1 ]; then run_seed; else log "Skipping seeding (--no-seed)"; fi
     if [ "$FORCE_NOHUP" -eq 1 ] || ! have_systemd; then
