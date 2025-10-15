@@ -32,44 +32,10 @@ jobs:
       DEPLOY_PATH: /opt/eassist-api
       GIT_SHA: ${{ github.sha }}
     steps:
-      - name: Checkout repository
+      - name: Checkout repository (metadata only)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Use Node 20.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
-
-      - name: Show Node & npm versions
-        run: node -v && npm -v
-
-      - name: Ensure lockfile exists
-        run: |
-          if [ ! -f package-lock.json ]; then
-            echo "::warning::package-lock.json missing. Generating one (consider committing)."
-            npm install --package-lock-only
-          fi
-          grep -m1 'lockfileVersion' package-lock.json || true
-
-      - name: Install dependencies (prefer ci)
-        run: |
-          set -e
-          echo "Installing dependencies with npm ci"
-          if ! npm ci; then
-            echo "::warning::npm ci failed; falling back to npm install"
-            rm -rf node_modules
-            npm install
-          fi
-
-      - name: Read version
-        id: v
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -87,69 +53,33 @@ jobs:
           fi
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Rsync files
+      - name: Prepare .env artifact (optional)
+        if: ${{ secrets.EASSIST_API_ENV != '' }}
         run: |
-          RSYNC_RSH="ssh -o StrictHostKeyChecking=yes"
-          rsync -az --delete \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='.env' \
-            ./ \
-            ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/
+          cat > eassist-api.env <<'EOF'
+          ${{ secrets.EASSIST_API_ENV }}
+          EOF
+          chmod 600 eassist-api.env
 
-      - name: Remote deploy (nohup, no sudo)
-        env:
-          BUILD_LABEL: v${{ steps.v.outputs.version }}+ci.${{ github.run_number }}
+      - name: Upload .env to server (optional)
+        if: ${{ secrets.EASSIST_API_ENV != '' }}
         run: |
-          ssh -o StrictHostKeyChecking=yes \
-            ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} \
-            'set -euo pipefail
-            echo "[Deploy] Starting user-space (nohup) deployment at $(date)"
-            cd ${{ env.DEPLOY_PATH }} || { echo "[Deploy] Failed to change to deploy directory"; exit 1; }
+          REMOTE_ENV="/tmp/eassist-api.env.${GITHUB_RUN_NUMBER}"
+          echo "REMOTE_ENV=$REMOTE_ENV" >> "$GITHUB_ENV"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes eassist-api.env ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }}:"$REMOTE_ENV"
 
-            # Provision .env from secret if provided; ensure PORT=8080
-            if [ -n "${{ secrets.EASSIST_API_ENV || '' }}" ]; then
-              printf "%s\n" "${{ secrets.EASSIST_API_ENV }}" > .env
-            fi
-            if [ -f .env ]; then
-              if grep -q "^PORT=" .env; then
-                sed -i.bak "s/^PORT=.*/PORT=8080/" .env && rm -f .env.bak || true
-              else
-                printf "\nPORT=8080\n" >> .env
-              fi
-            else
-              echo "[Deploy] ERROR: Missing .env and no EASSIST_API_ENV secret provided"; exit 1
-            fi
+      - name: Remote deploy via systemd script
+        run: |
+          set -euo pipefail
+          BRANCH="${GITHUB_REF_NAME}"
+          REMOTE_ENV_PATH="${REMOTE_ENV:-}"
+          REMOTE_CMD=("bash" "~/releases/deploy-eassist-api.sh" "--branch" "$BRANCH")
+          if [ -n "$REMOTE_ENV_PATH" ]; then
+            REMOTE_CMD=("bash" "~/releases/deploy-eassist-api.sh" "--env" "$REMOTE_ENV_PATH" "--branch" "$BRANCH")
+          fi
+          echo "Running: ${REMOTE_CMD[*]} on ${{ secrets.DEPLOY_HOST }} as ${{ secrets.DEPLOY_USER || 'gitdeploy' }}"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} "${REMOTE_CMD[@]}"
 
-            echo "[Deploy] Installing dependencies on server"
-            if ! npm ci --omit=dev --no-audit; then
-              echo "[Deploy] npm ci failed, trying npm install"
-              npm install --omit=dev --no-audit || { echo "[Deploy] Failed to install dependencies"; exit 1; }
-            fi
-
-            echo "[Deploy] Running migrations"
-            if npm run migrate:run 2>/dev/null; then
-              echo "[Deploy] Migrations (migrate:run) completed"
-            elif npm run migrate 2>/dev/null; then
-              echo "[Deploy] Migrations (migrate) completed"
-            else
-              echo "[Deploy] ERROR: Migration failed"; exit 1
-            fi
-
-            echo "[Deploy] Restarting via nohup"
-            chmod +x ./bin/eassistctl.sh 2>/dev/null || true
-            ./bin/eassistctl.sh restart --dir "${{ env.DEPLOY_PATH }}" --port 8080 --nohup || { echo "[Deploy] Restart failed"; exit 1; }
-
-            echo "[Deploy] Verifying port 8080"
-            for i in $(seq 1 30); do
-              if command -v ss >/dev/null 2>&1; then
-                ss -ltn | grep -q ":8080 " && { echo "[Deploy] ✅ Listening on 8080"; exit 0; }
-              elif command -v lsof >/dev/null 2>&1; then
-                lsof -ti:8080 >/dev/null 2>&1 && { echo "[Deploy] ✅ Listening on 8080"; exit 0; }
-              else
-                curl -fsS http://localhost:8080/ >/dev/null 2>&1 && { echo "[Deploy] ✅ Responding on 8080"; exit 0; }
-              fi
-              echo "[Deploy] Waiting for port 8080 to become active... (attempt $i/30)"; sleep 2
-            done
-            echo "[Deploy] ❌ ERROR: Service not listening on port 8080"; exit 1
-            '
+      - name: Post-deploy check (port 8080)
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} "ss -ltnp | grep -q ':8080 ' && echo 'API listening on 8080' || (echo 'No listener on 8080' && exit 1)"
