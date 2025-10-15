@@ -232,6 +232,13 @@ jobs:
           section "eAssist remote deploy end"
 
           printf "DONE=OK DATE=%s\n" "$(ts)" > "$DONE_FILE"
+          # Append deploy log to app log for full traceability
+          APP_LOG="$DEST_DIR/logs/eassist-api.log"
+          {
+            echo "==== DEPLOY LOG $(ts) ===="
+            cat "$LOG_FILE"
+            echo "==== END DEPLOY LOG $(ts) ===="
+          } >> "$APP_LOG"
           trap - EXIT
           SH
           chmod +x remote_deploy.sh
@@ -305,6 +312,18 @@ jobs:
           fi
           echo "---- App log tail (last 200 lines) ----" || true
           (tail -n 200 app.log) || true
+          # Print full deploy log for debugging
+          if [ -f deploy.log ]; then
+            echo "::group::FULL Deploy log (remote_deploy.sh)";
+            cat deploy.log;
+            echo "::endgroup::";
+          fi
+          # Print a large tail of the app log for debugging
+          if [ -f app.log ]; then
+            echo "::group::App log (last 1000 lines)";
+            tail -n 1000 app.log;
+            echo "::endgroup::";
+          fi
 
       - name: Upload logs as artifact
         if: always()
