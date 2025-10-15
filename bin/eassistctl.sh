@@ -261,19 +261,14 @@ run_truncate_non_auth() {
 
 run_seed_auto() {
   # Decide whether to run full seed or only permissions/superuser based on existing data
-  local status
-  status=$( node - <<'NODE'
-const cp=require('child_process');
-try{
-  const out=cp.spawnSync('node',['scripts/check-seed.js'],{cwd:process.env.DEST_DIR,encoding:'utf8'});
-  if(out.status!==0) { console.log('unknown'); process.exit(0); }
-  const j=JSON.parse((out.stdout||'').trim()||'{}');
-  const keys=['users','tickets','kb_articles','faqs','videos','kb_ratings','ticket_notes','ticket_events'];
-  const has = keys.some(k => (j[k]||0)>0);
-  console.log(has?'has':'empty');
-}catch(e){ console.log('unknown'); }
-NODE
-  )
+  local status json
+  json=$( ( cd "$DEST_DIR" && node scripts/check-seed.js ) 2>/dev/null || echo "" )
+  if [ -n "$json" ]; then
+    # parse minimal fields using node for robustness
+    status=$( node -e "try{const j=JSON.parse(process.argv[1]||'{}');const keys=['users','tickets','kb_articles','faqs','videos','kb_ratings','ticket_notes','ticket_events'];const has=keys.some(k=>+j[k]>0);console.log(has?'has':'empty')}catch(e){console.log('unknown')}" "$json" )
+  else
+    status="unknown"
+  fi
   case "$status" in
     empty)
       log "Database appears empty; seeding full initial data (seed:all)"
