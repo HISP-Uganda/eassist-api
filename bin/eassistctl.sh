@@ -161,18 +161,47 @@ start_systemd() {
 
 wait_ready() {
   log "Waiting for service on :$PORT ..."
-  for i in $(seq 1 30); do
-    if exists nc && nc -z localhost "$PORT" 2>/dev/null; then
-      log "✅ Service is responding on $PORT"
-      return 0
+  # prefer curl HTTP probe; fallback to nc/ss/lsof
+  for i in $(seq 1 40); do
+    # Try HTTP GET to root; any HTTP response indicates readiness
+    if command -v curl >/dev/null 2>&1; then
+      if curl -fsS --max-time 2 -o /dev/null "http://127.0.0.1:${PORT}/"; then
+        log "✅ HTTP response on :$PORT"
+        return 0
+      fi
     fi
-    if exists lsof && lsof -ti:"$PORT" >/dev/null 2>&1; then
-      log "✅ Service is listening on $PORT"
-      return 0
+    # TCP checks
+    if command -v nc >/dev/null 2>&1; then
+      if nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
+        log "✅ TCP open on :$PORT"
+        return 0
+      fi
     fi
-    sleep 2
+    if command -v ss >/dev/null 2>&1; then
+      if ss -ltn 2>/dev/null | grep -q ":$PORT\b"; then
+        log "✅ Service is listening on :$PORT"
+        return 0
+      fi
+    fi
+    if command -v lsof >/dev/null 2>&1; then
+      if lsof -ti:"$PORT" >/dev/null 2>&1; then
+        log "✅ Detected listener on :$PORT"
+        return 0
+      fi
+    fi
+    sleep 1.5
   done
   err "Service did not become ready on :$PORT"
+  # show recent logs for diagnostics
+  local log_file1="$LOG_DIR_DEFAULT/eassist-api.log"
+  local log_file2="/tmp/eassist-api.log"
+  if [ -f "$log_file1" ]; then
+    warn "Last 200 lines of $log_file1:"; tail -n 200 "$log_file1" || true
+  elif [ -f "$log_file2" ]; then
+    warn "Last 200 lines of $log_file2:"; tail -n 200 "$log_file2" || true
+  else
+    warn "No log file found at $log_file1 or $log_file2"
+  fi
   return 1
 }
 
@@ -231,6 +260,16 @@ run_seed() {
   elif npm_has_script seed; then ( cd "$DEST_DIR" && npm run seed );
   else warn "No seeding script found (seed:all / seed:initial / seed)."; fi
 }
+
+is_port_listening() {
+  local p="$1"
+  if command -v ss >/dev/null 2>&1; then ss -ltn 2>/dev/null | grep -q ":${p}\\b" && return 0; fi
+  if command -v lsof >/dev/null 2>&1; then lsof -ti:"$p" >/dev/null 2>&1 && return 0; fi
+  if command -v nc >/dev/null 2>&1; then nc -z 127.0.0.1 "$p" >/dev/null 2>&1 && return 0; fi
+  return 1
+}
+
+is_port_free() { ! is_port_listening "$1"; }
 
 # --------- Commands ---------
 case "$CMD" in
@@ -301,8 +340,12 @@ case "$CMD" in
     ;;
 
   restart)
-    stop_service
-    if [ "$FORCE_NOHUP" -eq 1 ] || ! have_systemd; then start_nohup; else start_systemd; fi
+    stop_service || warn "Stop may have failed; port might still be busy"
+    if is_port_free "$PORT"; then
+      if [ "$FORCE_NOHUP" -eq 1 ] || ! have_systemd; then start_nohup; else start_systemd; fi
+    else
+      warn "Port $PORT is still busy; assuming an instance is already running. Skipping start."
+    fi
     wait_ready
     ;;
 
