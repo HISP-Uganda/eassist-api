@@ -4,6 +4,7 @@ import { parsePagination } from "../../../utils/pagination.js";
 import { BadRequest } from "../../../utils/errors.js";
 import { create, update, remove } from "../../../utils/crud.js";
 import { listDetailed, readDetailed } from "../../../utils/relations.js";
+import { queueMessage } from "../../../utils/messaging.js";
 const r = Router();
 const t = "faqs";
 function isIntString(v) {
@@ -49,16 +50,32 @@ r.get("/", async (req, res, next) => {
 });
 r.post("/", async (a, b, c) => {
   try {
-    b.status(201).json(
-      await create(t, a.body, [
-        "title",
-        "body",
-        "system_category_id",
-        "is_published",
-        "created_by",
-        "created_at",
-      ])
-    );
+    const row = await create(t, a.body, [
+      "title",
+      "body",
+      "system_category_id",
+      "is_published",
+      "created_by",
+      "created_at",
+    ]);
+
+    // Best-effort: notify on publish
+    try {
+      if (row.is_published) {
+        const toUser = row.created_by || a.user?.sub || null;
+        if (toUser) {
+          await queueMessage({
+            channel: "IN_APP",
+            to_user_id: toUser,
+            template_code: "CONTENT_PUBLISHED_FAQ",
+            subject: "FAQ published",
+            body: String(row.title || "").slice(0, 200),
+          });
+        }
+      }
+    } catch {}
+
+    b.status(201).json(row);
   } catch (e) {
     c(e);
   }
@@ -72,16 +89,43 @@ r.get("/:id", async (a, b, c) => {
 });
 r.put("/:id", async (a, b, c) => {
   try {
-    b.json(
-      await update(t, "id", a.params.id, a.body, [
-        "title",
-        "body",
-        "system_category_id",
-        "is_published",
-        "created_by",
-        "created_at",
-      ])
+    const beforeQ = await pool.query(
+      `SELECT is_published, created_by, title FROM ${t} WHERE id=$1`,
+      [a.params.id]
     );
+    const before = beforeQ.rows[0] || {};
+    const row = await update(t, "id", a.params.id, a.body, [
+      "title",
+      "body",
+      "system_category_id",
+      "is_published",
+      "created_by",
+      "created_at",
+    ]);
+
+    // Notify on publish/unpublish change
+    try {
+      if (
+        Object.prototype.hasOwnProperty.call(a.body, "is_published") &&
+        before.is_published !== row.is_published
+      ) {
+        const toUser = row.created_by || a.user?.sub || null;
+        const code = row.is_published
+          ? "CONTENT_PUBLISHED_FAQ"
+          : "CONTENT_UNPUBLISHED_FAQ";
+        if (toUser) {
+          await queueMessage({
+            channel: "IN_APP",
+            to_user_id: toUser,
+            template_code: code,
+            subject: row.is_published ? "FAQ published" : "FAQ unpublished",
+            body: String(row.title || "").slice(0, 200),
+          });
+        }
+      }
+    } catch {}
+
+    b.json(row);
   } catch (e) {
     c(e);
   }

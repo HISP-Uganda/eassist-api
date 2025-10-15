@@ -9,6 +9,7 @@ import {
 } from "../../middleware/auth.js";
 import { requireAuth } from "../../middleware/auth.js";
 import { BadRequest, Unauthorized } from "../../utils/errors.js";
+import { queueMessage } from "../../utils/messaging.js";
 
 const r = Router();
 
@@ -218,6 +219,20 @@ r.post("/request-password-reset", async (req, res, next) => {
       "INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1,$2, now() + make_interval(days => 1))",
       [u.id, hash]
     );
+
+    // Best-effort: queue reset email
+    try {
+      const linkBase = process.env.APP_PUBLIC_URL || "https://example.com";
+      const resetUrl = `${linkBase}/reset-password?email=${encodeURIComponent(email)}&token=${encodeURIComponent(raw)}`;
+      await queueMessage({
+        channel: "EMAIL",
+        to_email: email,
+        template_code: "PASSWORD_RESET_LINK",
+        subject: "Password reset request",
+        body: `Use this link to reset your password: ${resetUrl}`,
+      });
+    } catch {}
+
     res.json({ ok: true, token_preview: raw.slice(0, 8) + "…" });
   } catch (e) {
     next(e);
@@ -251,11 +266,109 @@ r.post("/reset-password", async (req, res, next) => {
     await pool.query("UPDATE password_reset_tokens SET used=true WHERE id=$1", [
       matched.id,
     ]);
+
+    // Best-effort: security alert to user
+    try {
+      await queueMessage({
+        channel: "EMAIL",
+        to_email: email,
+        template_code: "SECURITY_ALERT_PASSWORD_CHANGED",
+        subject: "Your password was changed",
+        body: "If this wasn\'t you, please contact support immediately.",
+      });
+      await queueMessage({
+        channel: "IN_APP",
+        to_user_id: u.id,
+        template_code: "SECURITY_ALERT_PASSWORD_CHANGED",
+        subject: "Password changed",
+        body: "Your password was updated.",
+      });
+    } catch {}
+
     res.json({ ok: true });
   } catch (e) {
     next(e);
   }
 });
+
+// Request OTP code for login or sensitive action
+// body: { email?, phone?, purpose? }
+r.post("/otp/request", async (req, res, next) => {
+  try {
+    const settings = await readOtpSettings();
+    if (!settings.enabled) return next(BadRequest('OTP is disabled'));
+
+    const email = req.body?.email || null;
+    const phone = req.body?.phone || null;
+    const purpose = String(req.body?.purpose || 'login');
+    if (!email && !phone) return next(BadRequest('email or phone required'));
+
+    const code = genOtp();
+    const codeHash = await bcrypt.hash(code, 10);
+    const expiresAt = new Date(Date.now() + settings.code_ttl_sec * 1000);
+
+    await pool.query(
+      `INSERT INTO otp_codes (email, phone, purpose, code_hash, max_attempts, expires_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [email ? String(email).toLowerCase() : null, phone || null, purpose, codeHash, settings.max_attempts, expiresAt]
+    );
+
+    // Send on configured channels when possible
+    try {
+      if (settings.channels.includes('EMAIL') && email) {
+        await queueMessage({ channel: 'EMAIL', to_email: email, template_code: 'OTP_CODE_EMAIL', subject: 'Your verification code', body: `Your verification code is ${code}.` });
+      }
+      if (settings.channels.includes('SMS') && phone) {
+        await queueMessage({ channel: 'SMS', to_phone: phone, template_code: 'OTP_CODE_SMS', body: `Your code is ${code}` });
+      }
+      // IN_APP fallback if a logged-in user is requesting for a sensitive action
+      if ((!email && !phone) && req.user?.sub) {
+        await queueMessage({ channel: 'IN_APP', to_user_id: req.user.sub, template_code: 'OTP_CODE_IN_APP', subject: 'Verification code', body: `Your code is ${code}` });
+      }
+    } catch {}
+
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// Verify OTP code
+// body: { email?, phone?, purpose?, code }
+r.post("/otp/verify", async (req, res, next) => {
+  try {
+    const email = req.body?.email ? String(req.body.email).toLowerCase() : null;
+    const phone = req.body?.phone || null;
+    const purpose = String(req.body?.purpose || 'login');
+    const code = String(req.body?.code || '').trim();
+    if (!code) return next(BadRequest('code is required'));
+    if (!email && !phone) return next(BadRequest('email or phone required'));
+
+    const { rows } = await pool.query(
+      `SELECT * FROM otp_codes WHERE used=false AND expires_at > now() AND (lower(email)=COALESCE($1, lower(email)) OR ($1 IS NULL AND email IS NULL)) AND (phone=COALESCE($2, phone) OR ($2 IS NULL AND phone IS NULL)) AND purpose=$3 ORDER BY created_at DESC LIMIT 10`,
+      [email, phone, purpose]
+    );
+    let match = null;
+    for (const row of rows) {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await bcrypt.compare(code, row.code_hash);
+      if (ok) { match = row; break; }
+    }
+    if (!match) return next(BadRequest('Invalid or expired code'));
+
+    // Increment attempts and validate
+    const attempts = Number(match.attempts || 0) + 1;
+    if (attempts > Number(match.max_attempts || 5)) return next(BadRequest('Too many attempts'));
+
+    await pool.query(`UPDATE otp_codes SET attempts=$1, used=true WHERE id=$2`, [attempts, match.id]);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+async function readOtpSettings(){
+  const q = await pool.query(`SELECT enabled, channels, code_ttl_sec, max_attempts FROM otp_settings WHERE id=TRUE`);
+  const row = q.rows[0] || { enabled: false, channels: [], code_ttl_sec: 300, max_attempts: 5 };
+  const channels = Array.isArray(row.channels) ? row.channels : (row.channels ? JSON.parse(row.channels) : []);
+  return { enabled: !!row.enabled, channels, code_ttl_sec: Number(row.code_ttl_sec||300), max_attempts: Number(row.max_attempts||5) };
+}
+function genOtp(){ return String(Math.floor(100000 + Math.random() * 900000)); }
 
 function cryptoRandom(len) {
   const chars =

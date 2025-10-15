@@ -5,6 +5,7 @@ import listEndpoints from "express-list-endpoints";
 import { BadRequest, NotFound } from "../../utils/errors.js";
 import { create } from "../../utils/crud.js";
 import jwt from "jsonwebtoken";
+import { queueMessage } from "../../utils/messaging.js";
 const r = Router();
 
 // Simple health probe
@@ -163,6 +164,32 @@ r.post("/tickets", async (req, res, next) => {
     ];
 
     const created = await create("tickets", data, allow);
+
+    // Queue public receipt notifications (best-effort)
+    try {
+      const reporterEmail = created?.reporter_email || null;
+      const reporterPhone = created?.phone_number || null;
+      if (reporterEmail) {
+        await queueMessage({
+          channel: "EMAIL",
+          to_email: reporterEmail,
+          subject: "We received your request",
+          template_code: "TICKET_PUBLIC_RECEIPT",
+          body: `Thank you. We've received your ticket${created?.ticket_key ? ` (${created.ticket_key})` : ""}.`,
+        });
+      }
+      if (reporterPhone) {
+        await queueMessage({
+          channel: "SMS",
+          to_phone: reporterPhone,
+          body: created?.ticket_key
+            ? `Your ticket ${created.ticket_key} was received.`
+            : `Your ticket was received.`,
+          template_code: "TICKET_PUBLIC_RECEIPT",
+        });
+      }
+    } catch {}
+
     res.status(201).json(created);
   } catch (e) {
     // Translate FK errors to a 400 for a clearer message
@@ -490,6 +517,12 @@ r.post('/faqs/:id/rate', async (req,res,next)=>{
     const userId = req.user?.sub || null;
     const row = await upsertRating('faq_ratings','faq_id',faqId,userId,rating);
     const sum = await summary('faq_ratings','faq_id',faqId);
+
+    // Best-effort thank-you notification
+    if (userId) {
+      try { await queueMessage({ channel: 'IN_APP', to_user_id: userId, template_code: 'RATING_THANK_YOU', subject: 'Thanks for rating', body: 'We appreciate your feedback on this FAQ.' }); } catch {}
+    }
+
     res.status(201).json({ rating: row, summary: sum });
   } catch (e){ next(e); }
 });
@@ -507,6 +540,11 @@ r.post('/kb/articles/:id/rate', async (req,res,next)=>{
     const userId = req.user?.sub || null;
     const row = await upsertRating('kb_ratings','article_id',id,userId,rating);
     const sum = await summary('kb_ratings','article_id',id);
+
+    if (userId) {
+      try { await queueMessage({ channel: 'IN_APP', to_user_id: userId, template_code: 'RATING_THANK_YOU', subject: 'Thanks for rating', body: 'Thanks for your feedback on this article.' }); } catch {}
+    }
+
     res.status(201).json({ rating: row, summary: sum });
   } catch (e){ next(e); }
 });
@@ -524,6 +562,11 @@ r.post('/videos/:id/rate', async (req,res,next)=>{
     const userId = req.user?.sub || null;
     const row = await upsertRating('video_ratings','video_id',id,userId,rating);
     const sum = await summary('video_ratings','video_id',id);
+
+    if (userId) {
+      try { await queueMessage({ channel: 'IN_APP', to_user_id: userId, template_code: 'RATING_THANK_YOU', subject: 'Thanks for rating', body: 'Thanks for your feedback on this video.' }); } catch {}
+    }
+
     res.status(201).json({ rating: row, summary: sum });
   } catch (e){ next(e); }
 });

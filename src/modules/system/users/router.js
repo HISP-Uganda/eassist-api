@@ -8,6 +8,7 @@ import { getUserPermissions } from "../../../middleware/auth.js";
 import { PERMISSIONS } from "../../../constants/permissions.js";
 import { BadRequest } from "../../../utils/errors.js";
 import { listDetailed, readDetailed } from "../../../utils/relations.js";
+import { queueMessage } from "../../../utils/messaging.js";
 const r = Router();
 const t = "users";
 
@@ -308,6 +309,7 @@ r.put(
       }
 
       // Reconcile nested roles if provided
+      let rolesChanged = false;
       if (Array.isArray(req.body.roles)) {
         const wantRoleIds = [];
         for (const rInput of req.body.roles) {
@@ -321,6 +323,7 @@ r.put(
         const want = new Set(wantRoleIds.map(String));
         const toAdd = [...want].filter(id => !cur.has(id));
         const toDel = [...cur].filter(id => !want.has(id));
+        rolesChanged = toAdd.length > 0 || toDel.length > 0;
         if (toAdd.length) {
           await client.query(
             `INSERT INTO user_roles (user_id, role_id) SELECT $1, x FROM unnest($2::uuid[]) x ON CONFLICT DO NOTHING`,
@@ -395,12 +398,25 @@ r.put(
       }
 
       await client.query('COMMIT');
+
+      // Best-effort: notify user on role changes
+      try {
+        if (rolesChanged) {
+          const uq = await pool.query(`SELECT email FROM users WHERE id=$1`, [req.params.id]);
+          const email = uq.rows[0]?.email || null;
+          if (email) {
+            await queueMessage({ channel: 'EMAIL', to_email: email, template_code: 'PERMISSIONS_UPDATED', subject: 'Your permissions have changed', body: 'Your roles/permissions were updated.' });
+          }
+          await queueMessage({ channel: 'IN_APP', to_user_id: req.params.id, template_code: 'PERMISSIONS_UPDATED', subject: 'Permissions updated', body: 'Your roles/permissions were updated.' });
+        }
+      } catch {}
+
       // Re-fetch enriched user with nested relations/collections and projection support
       let enriched = null;
       try {
         enriched = await readDetailed(t, 'id', req.params.id, req);
       } catch (_) {}
-      return res.json(scrub(enriched || updated));
+      res.json(scrub(enriched || updated));
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch {}
       next(e);

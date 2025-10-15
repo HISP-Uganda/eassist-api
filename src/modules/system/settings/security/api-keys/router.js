@@ -8,6 +8,7 @@ import {
 import { listDetailed, readDetailed } from "../../../../../utils/relations.js";
 import bcrypt from "bcryptjs";
 import pool from "../../../../../db/pool.js";
+import { queueMessage } from "../../../../../utils/messaging.js";
 const r = Router();
 const table = "api_keys";
 
@@ -27,6 +28,19 @@ function asPublic(row) {
   if (!row) return null;
   const { key_hash, ...rest } = row;
   return rest;
+}
+
+async function notifyAdmins(template_code, subject, body) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT ur.user_id FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE lower(r.code)='admin' OR lower(r.name)='admin'`
+    );
+    const ids = Array.from(new Set(rows.map((r) => r.user_id))).filter(Boolean);
+    for (const uid of ids) {
+      // eslint-disable-next-line no-await-in-loop
+      await queueMessage({ channel: 'IN_APP', to_user_id: uid, template_code, subject, body });
+    }
+  } catch {}
 }
 
 r.get("/", async (req, res, next) => {
@@ -84,6 +98,17 @@ r.post("/", async (req, res, next) => {
         "prefix",
       ]
     );
+
+    // Best-effort: notify key owner and admins
+    try {
+      const subj = 'API key created';
+      const body = `API key \"${row.name}\" was created.`;
+      if (created_by) {
+        await queueMessage({ channel: 'IN_APP', to_user_id: created_by, template_code: 'API_KEY_CREATED', subject: subj, body });
+      }
+      await notifyAdmins('API_KEY_CREATED', subj, body);
+    } catch {}
+
     res
       .status(201)
       .json({
@@ -127,6 +152,14 @@ r.post("/:id/activate", async (req, res, next) => {
     const row = await update(table, "id", req.params.id, { is_active: true }, [
       "is_active",
     ]);
+
+    try {
+      const subj = 'API key activated';
+      const msg = `API key \"${row.name}\" was activated.`;
+      if (row.created_by) await queueMessage({ channel:'IN_APP', to_user_id: row.created_by, template_code: 'API_KEY_ACTIVATED', subject: subj, body: msg });
+      await notifyAdmins('API_KEY_ACTIVATED', subj, msg);
+    } catch {}
+
     res.json(asPublic(row));
   } catch (e) {
     next(e);
@@ -137,6 +170,14 @@ r.post("/:id/deactivate", async (req, res, next) => {
     const row = await update(table, "id", req.params.id, { is_active: false }, [
       "is_active",
     ]);
+
+    try {
+      const subj = 'API key deactivated';
+      const msg = `API key \"${row.name}\" was deactivated.`;
+      if (row.created_by) await queueMessage({ channel:'IN_APP', to_user_id: row.created_by, template_code: 'API_KEY_DEACTIVATED', subject: subj, body: msg });
+      await notifyAdmins('API_KEY_DEACTIVATED', subj, msg);
+    } catch {}
+
     res.json(asPublic(row));
   } catch (e) {
     next(e);
@@ -155,6 +196,14 @@ r.post("/:id/rotate", async (req, res, next) => {
       [hash, toPrefix(raw), req.params.id]
     );
     const row = rows[0];
+
+    try {
+      const subj = 'API key rotated';
+      const msg = `API key \"${row.name}\" was rotated.`;
+      if (row.created_by) await queueMessage({ channel:'IN_APP', to_user_id: row.created_by, template_code: 'API_KEY_ROTATED', subject: subj, body: msg });
+      await notifyAdmins('API_KEY_ROTATED', subj, msg);
+    } catch {}
+
     res.json({
       id: row.id,
       name: row.name,
@@ -172,7 +221,25 @@ r.post("/:id/rotate", async (req, res, next) => {
 // Delete (revoke)
 r.delete("/:id", async (req, res, next) => {
   try {
-    res.json(await remove(table, "id", req.params.id));
+    // Fetch for notification before deletion
+    let cur = null;
+    try {
+      const { rows } = await pool.query(`SELECT id,name,created_by FROM ${table} WHERE id=$1`, [req.params.id]);
+      cur = rows[0] || null;
+    } catch {}
+
+    const result = await remove(table, "id", req.params.id);
+
+    try {
+      if (cur) {
+        const subj = 'API key revoked';
+        const msg = `API key \"${cur.name}\" was revoked.`;
+        if (cur.created_by) await queueMessage({ channel:'IN_APP', to_user_id: cur.created_by, template_code: 'API_KEY_REVOKED', subject: subj, body: msg });
+        await notifyAdmins('API_KEY_REVOKED', subj, msg);
+      }
+    } catch {}
+
+    res.json(result);
   } catch (e) {
     next(e);
   }

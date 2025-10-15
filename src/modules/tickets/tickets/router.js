@@ -6,6 +6,7 @@ import { requireAnyPermission } from "../../../middleware/auth.js";
 import { PERMISSIONS } from "../../../constants/permissions.js";
 import { NotFound, BadRequest } from "../../../utils/errors.js";
 import { listDetailed, readDetailed } from "../../../utils/relations.js";
+import { queueMessage } from "../../../utils/messaging.js";
 const r = Router();
 const table = "tickets",
   idCol = "id";
@@ -278,6 +279,25 @@ r.post(
       }
 
       await client.query('COMMIT');
+
+      // Best-effort notifications after commit
+      try {
+        const reporterUserId = ticket.reporter_user_id || null;
+        const reporterEmail = ticket.reporter_email || null;
+        // Reporter confirmation (EMAIL primary)
+        if (reporterEmail) {
+          await queueMessage({ channel: 'EMAIL', to_email: reporterEmail, template_code: 'TICKET_CREATED_CONFIRMATION', subject: `Ticket created${ticket.ticket_key ? ` (${ticket.ticket_key})` : ''}`, body: ticket.title || 'Your request was received.' });
+        }
+        // Reporter in-app (if registered)
+        if (reporterUserId) {
+          await queueMessage({ channel: 'IN_APP', to_user_id: reporterUserId, template_code: 'TICKET_CREATED_CONFIRMATION', subject: 'Your ticket was created', body: ticket.title || '' });
+        }
+        // Assigned agent/group (simple: assigned_agent_id only)
+        if (ticket.assigned_agent_id) {
+          await queueMessage({ channel: 'IN_APP', to_user_id: ticket.assigned_agent_id, template_code: 'TICKET_CREATED_NOTIFY', subject: 'New ticket assigned', body: ticket.title || '' });
+        }
+      } catch {}
+
       res.status(201).json(ticket);
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch {}
@@ -360,6 +380,14 @@ r.post(
         [id, JSON.stringify({ assigned_agent_id: assigned_agent_id })]
       );
       await touch(id);
+
+      // Best-effort notify assignee
+      try {
+        if (assigned_agent_id) {
+          await queueMessage({ channel: 'IN_APP', to_user_id: assigned_agent_id, template_code: 'TICKET_ASSIGNED', subject: 'A ticket was assigned to you', body: rows[0]?.title || '' });
+        }
+      } catch {}
+
       res.json(rows[0]);
     } catch (e) {
       next(e);
@@ -457,6 +485,21 @@ r.post(
         [id, JSON.stringify({ status_id: status_id })]
       );
       await touch(id);
+
+      // Notify reporter about status change (best-effort)
+      try {
+        const t = rows[0] || {};
+        const reporterUserId = t.reporter_user_id || null;
+        const reporterEmail = t.reporter_email || null;
+        const st = req.body.status_code || String(status_id || '');
+        if (reporterEmail) {
+          await queueMessage({ channel: 'EMAIL', to_email: reporterEmail, template_code: `TICKET_STATUS_${st}`.toUpperCase(), subject: 'Ticket status updated', body: `Your ticket status changed to ${st}.` });
+        }
+        if (reporterUserId) {
+          await queueMessage({ channel: 'IN_APP', to_user_id: reporterUserId, template_code: `TICKET_STATUS_${st}`.toUpperCase(), subject: 'Ticket status updated', body: `Status: ${st}` });
+        }
+      } catch {}
+
       res.json(rows[0]);
     } catch (e) {
       next(e);
@@ -573,6 +616,36 @@ r.post(
         `INSERT INTO ticket_events (ticket_id,event_type,actor_user_id,details) VALUES ($1,'note_added',$2,$3::jsonb)`,
         [req.params.id, userId, JSON.stringify({ note_id: rows[0].id })]
       );
+
+      // Best-effort: notify assigned agent and watchers; email reporter for public note
+      try {
+        const tq = await pool.query(`SELECT assigned_agent_id, reporter_user_id, reporter_email, title FROM tickets WHERE id=$1`, [req.params.id]);
+        const t = tq.rows[0] || {};
+        if (t.assigned_agent_id) {
+          await queueMessage({ channel: 'IN_APP', to_user_id: t.assigned_agent_id, template_code: 'TICKET_NOTE_ADDED', subject: 'New note on ticket', body: String(t.title || '').slice(0, 200) });
+        }
+        const wq = await pool.query(`SELECT user_id FROM ticket_watchers WHERE ticket_id=$1 AND notify=TRUE AND user_id IS NOT NULL`, [req.params.id]);
+        for (const w of wq.rows) {
+          // eslint-disable-next-line no-await-in-loop
+          await queueMessage({ channel: 'IN_APP', to_user_id: w.user_id, template_code: 'TICKET_NOTE_ADDED', subject: 'New note on ticket', body: String(t.title || '').slice(0, 200) });
+        }
+        if (!is_internal && t.reporter_email) {
+          await queueMessage({ channel: 'EMAIL', to_email: t.reporter_email, template_code: 'TICKET_NOTE_ADDED', subject: 'Update on your ticket', body: 'A new comment was added.' });
+        }
+
+        // @mention parsing: @user:<uuid>
+        const mentionUids = new Set();
+        const re = /@user:([0-9a-fA-F-]{36})/g;
+        let m;
+        while ((m = re.exec(String(body))) !== null) {
+          mentionUids.add(m[1]);
+        }
+        for (const uid of mentionUids) {
+          // eslint-disable-next-line no-await-in-loop
+          await queueMessage({ channel: 'IN_APP', to_user_id: uid, template_code: 'TICKET_MENTION', subject: 'You were mentioned on a ticket', body: String(t.title || '').slice(0, 200) });
+        }
+      } catch {}
+
       res.status(201).json(rows[0]);
     } catch (e) {
       next(e);
@@ -617,6 +690,14 @@ r.post(
         `INSERT INTO ticket_watchers (ticket_id,user_id,email,notify) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING *`,
         [req.params.id, user_id, email, notify]
       );
+
+      // Best-effort: notify added watcher (in-app)
+      try {
+        if (rows[0]?.user_id) {
+          await queueMessage({ channel: 'IN_APP', to_user_id: rows[0].user_id, template_code: 'TICKET_WATCHER_ADDED', subject: 'You are now watching a ticket', body: '' });
+        }
+      } catch {}
+
       res.status(201).json(rows[0] || { ok: true });
     } catch (e) {
       next(e);
@@ -697,6 +778,21 @@ r.post(
         `INSERT INTO ticket_events (ticket_id,event_type,actor_user_id,details) VALUES ($1,'attachment_added',$2,$3::jsonb)`,
         [req.params.id, userId, JSON.stringify({ attachment_id: rows[0].id })]
       );
+
+      // Best-effort: notify assigned agent and watchers (in-app)
+      try {
+        const tq = await pool.query(`SELECT assigned_agent_id, title FROM tickets WHERE id=$1`, [req.params.id]);
+        const t = tq.rows[0] || {};
+        if (t.assigned_agent_id) {
+          await queueMessage({ channel: 'IN_APP', to_user_id: t.assigned_agent_id, template_code: 'TICKET_ATTACHMENT_ADDED', subject: 'Attachment added', body: String(t.title || '').slice(0, 200) });
+        }
+        const wq = await pool.query(`SELECT user_id FROM ticket_watchers WHERE ticket_id=$1 AND notify=TRUE AND user_id IS NOT NULL`, [req.params.id]);
+        for (const w of wq.rows) {
+          // eslint-disable-next-line no-await-in-loop
+          await queueMessage({ channel: 'IN_APP', to_user_id: w.user_id, template_code: 'TICKET_ATTACHMENT_ADDED', subject: 'Attachment added', body: String(t.title || '').slice(0, 200) });
+        }
+      } catch {}
+
       res.status(201).json(rows[0]);
     } catch (e) {
       next(e);
@@ -745,6 +841,20 @@ r.post(
         [req.params.id]
       );
       await touch(req.params.id);
+
+      // Rating request to reporter (best-effort)
+      try {
+        const t = rows[0] || {};
+        const reporterUserId = t.reporter_user_id || null;
+        const reporterEmail = t.reporter_email || null;
+        if (reporterEmail) {
+          await queueMessage({ channel: 'EMAIL', to_email: reporterEmail, template_code: 'RATING_REQUEST', subject: 'How did we do?', body: 'Please rate your support experience.' });
+        }
+        if (reporterUserId) {
+          await queueMessage({ channel: 'IN_APP', to_user_id: reporterUserId, template_code: 'RATING_REQUEST', subject: 'Rate your ticket', body: 'We value your feedback.' });
+        }
+      } catch {}
+
       res.json(rows[0]);
     } catch (e) {
       next(e);
@@ -767,6 +877,15 @@ r.post(
         [req.params.id]
       );
       await touch(req.params.id);
+
+      // Notify assignee/watchers best-effort (simple: assignee only)
+      try {
+        const t = rows[0] || {};
+        if (t.assigned_agent_id) {
+          await queueMessage({ channel: 'IN_APP', to_user_id: t.assigned_agent_id, template_code: 'TICKET_REOPENED', subject: 'Ticket reopened', body: t.title || '' });
+        }
+      } catch {}
+
       res.json(rows[0]);
     } catch (e) {
       next(e);

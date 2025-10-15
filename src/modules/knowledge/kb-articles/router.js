@@ -4,6 +4,7 @@ import { parsePagination } from "../../../utils/pagination.js";
 import { NotFound, BadRequest } from "../../../utils/errors.js";
 import { pickFields } from "../../../utils/crud.js";
 import { listDetailed } from "../../../utils/relations.js";
+import { queueMessage } from "../../../utils/messaging.js";
 const r = Router();
 const t = "kb_articles";
 
@@ -48,11 +49,17 @@ r.post("/", async (req, res, next) => {
       return next(BadRequest("No valid columns provided for insert"));
     const ph = Object.keys(data).map((_, i) => `$${i + 1}`);
     const { rows } = await pool.query(
-      `INSERT INTO ${t} (${Object.keys(data).join(",")}) VALUES (${ph.join(
-        ","
-      )}) RETURNING *`,
+      `INSERT INTO ${t} (${Object.keys(data).join(",")}) VALUES (${ph.join(",")}) RETURNING *`,
       Object.values(data)
     );
+
+    // Best-effort: notify on publish
+    try {
+      if (rows[0]?.is_published && req.user?.sub) {
+        await queueMessage({ channel: 'IN_APP', to_user_id: req.user.sub, template_code: 'CONTENT_PUBLISHED_KB', subject: 'KB article published', body: String(rows[0].title || '').slice(0, 200) });
+      }
+    } catch {}
+
     res.status(201).json(rows[0]);
   } catch (e) {
     next(e);
@@ -81,6 +88,8 @@ r.get("/:id", async (req, res, next) => {
 
 r.put("/:id", async (req, res, next) => {
   try {
+    const beforeQ = await pool.query(`SELECT is_published, title FROM ${t} WHERE id=$1`, [req.params.id]);
+    const before = beforeQ.rows[0] || {};
     const cols = ["title", "body", "is_published"];
     const set = [];
     const vals = [];
@@ -97,6 +106,15 @@ r.put("/:id", async (req, res, next) => {
       `UPDATE ${t} SET ${set.join(", ")} WHERE id=$${vals.length} RETURNING *`,
       vals
     );
+
+    // Best-effort: notify on publish/unpublish change
+    try {
+      if (Object.prototype.hasOwnProperty.call(req.body, 'is_published') && before.is_published !== rows[0]?.is_published && req.user?.sub) {
+        const code = rows[0].is_published ? 'CONTENT_PUBLISHED_KB' : 'CONTENT_UNPUBLISHED_KB';
+        await queueMessage({ channel: 'IN_APP', to_user_id: req.user.sub, template_code: code, subject: rows[0].is_published ? 'KB article published' : 'KB article unpublished', body: String(rows[0].title || '').slice(0, 200) });
+      }
+    } catch {}
+
     res.json(rows[0]);
   } catch (e) {
     next(e);
