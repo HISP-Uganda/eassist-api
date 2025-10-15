@@ -15,14 +15,23 @@
 # - PORT=8080
 set -euo pipefail
 
+# Resolve script directory for relative paths (robust to nounset and array indexing)
+# Using a guard for BASH_SOURCE to avoid unbound array expansion under `set -u`.
+if [ -n "${BASH_SOURCE-}" ] && [ -n "${BASH_SOURCE[0]-}" ]; then
+  _eassist_src="${BASH_SOURCE[0]}"
+else
+  _eassist_src="$0"
+fi
+SCRIPT_DIR="$(cd "$(dirname "$_eassist_src")" && pwd)"
+
 # ------------- Defaults -------------
 DEST_DIR="${DEST_DIR:-/opt/eassist-api}"
 REPO_URL="${REPO_URL:-https://github.com/HISP-Uganda/eassist-api.git}"
 REF="${REF:-origin/releases}"
 PORT="${PORT:-8080}"
 SERVICE_NAME="${SERVICE_NAME:-eassist-api.service}"
-SEED_MODE="${SEED_MODE:-auto}"  # auto|skip|truncate
-LOG_DIR_DEFAULT="$HOME/logs"
+SEED_MODE="${SEED_MODE:-auto}"
+LOG_DIR_DEFAULT="${LOG_DIR_DEFAULT:-$DEST_DIR/logs}"
 PID_FILE_DEFAULT="$HOME/.eassist-api.pid"
 # ------------------------------------
 
@@ -88,7 +97,7 @@ while [[ $# -gt 0 ]]; do
     --systemd) FORCE_SYSTEMD=1; shift;;
     --port) PORT="${2:-}"; shift 2;;
     -h|--help) usage; exit 0;;
-    *) warn "Unknown option: $1"; shift;;
+    *) shift;; # Ignore unknown options
   esac
 done
 
@@ -111,7 +120,17 @@ repo_root_from_dir() {
 }
 
 have_systemd() {
-  [ "$FORCE_NOHUP" -eq 0 ] && [ -f "/etc/systemd/system/$SERVICE_NAME" ] && exists systemctl
+  # Only use systemd if: not forcing nohup, unit file exists, systemctl exists,
+  # and passwordless sudo is available to control the service.
+  if [ "$FORCE_NOHUP" -ne 0 ]; then return 1; fi
+  [ -f "/etc/systemd/system/$SERVICE_NAME" ] || return 1
+  exists systemctl || return 1
+  if exists sudo; then
+    sudo -n true >/dev/null 2>&1 || return 1
+  else
+    return 1
+  fi
+  return 0
 }
 
 stop_service() {
@@ -320,7 +339,13 @@ is_port_free() { ! is_port_listening "$1"; }
 
 run_migrations() {
   log "Running migrations"
-  node "$SCRIPT_DIR/../scripts/run-migrations.js" "$@"
+  # Prefer migrations script from the deployed DEST_DIR
+  local scripts_dir="$DEST_DIR/scripts"
+  if [ ! -f "$scripts_dir/run-migrations.js" ]; then
+    err "run-migrations.js not found in $scripts_dir"
+    return 1
+  fi
+  (cd "$DEST_DIR" && node "$scripts_dir/run-migrations.js" "$@")
 }
 
 # --------- Commands ---------
@@ -343,13 +368,18 @@ case "$CMD" in
     # Apply env file if provided (prefer non-sudo copy; fallback to sudo if necessary)
     if [ -n "$ENV_FILE" ]; then
       section "Apply environment file"
-      if [ -f "$ENV_FILE" ]; then
-        if cp "$ENV_FILE" "$DEST_DIR/.env" 2>/dev/null; then :; else
-          if exists sudo; then sudo cp "$ENV_FILE" "$DEST_DIR/.env" && sudo chown "$(whoami):$(id -gn)" "$DEST_DIR/.env"; else
-            err "Cannot write $DEST_DIR/.env and sudo is unavailable"; exit 1; fi
-        fi
+      dest_env="$DEST_DIR/.env"
+      if [ "$(realpath "${ENV_FILE:-}" 2>/dev/null)" = "$(realpath "$dest_env" 2>/dev/null)" ]; then
+        log "ENV_FILE already at destination ($dest_env); skipping copy"
       else
-        err "--env-file not found: $ENV_FILE"; exit 1
+        if [ -f "$ENV_FILE" ]; then
+          if cp "$ENV_FILE" "$dest_env" 2>/dev/null; then :; else
+            if exists sudo; then sudo cp "$ENV_FILE" "$dest_env" && sudo chown "$(whoami):$(id -gn)" "$dest_env"; else
+              err "Cannot write $dest_env and sudo is unavailable"; exit 1; fi
+          fi
+        else
+          err "--env-file not found: $ENV_FILE"; exit 1
+        fi
       fi
     fi
     # Checkout/update code
