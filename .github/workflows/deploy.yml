@@ -74,7 +74,7 @@ jobs:
           set -euo pipefail
           REMOTE_ENV_PATH="${REMOTE_ENV:-}"
           SSH_TARGET="${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }}"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_TARGET" bash -s -- "$REMOTE_ENV_PATH" <<-'REMOTE_SCRIPT'
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_TARGET" bash -s -- "$REMOTE_ENV_PATH" << 'REMOTE_SCRIPT'
           set -euo pipefail
           DEST_DIR='${{ env.DEPLOY_PATH }}'
           PORT='${{ env.PORT }}'
@@ -108,7 +108,7 @@ jobs:
           else
             "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup
           fi
-	REMOTE_SCRIPT
+          REMOTE_SCRIPT
 
       - name: Post-deploy check (port 8080)
         run: |
