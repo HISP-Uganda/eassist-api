@@ -81,14 +81,11 @@ jobs:
             echo "No EASSIST_API_ENV secret provided; will preserve existing .env on server"
           fi
 
-      - name: Remote deploy via eassistctl (nohup)
+      - name: Create remote deploy script locally
         run: |
           set -euo pipefail
-          REMOTE_ENV_PATH="${REMOTE_ENV:-}"
-          SSH_TARGET="${SSH_USER:-gitdeploy}@${SSH_HOST}"
-          SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
-          if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; fi
-          ssh $SSH_OPTS "$SSH_TARGET" bash -s -- "$REMOTE_ENV_PATH" << 'REMOTE_SCRIPT'
+          cat > remote_deploy.sh <<'SH'
+          #!/usr/bin/env bash
           set -euo pipefail
           LOG_FILE="/tmp/eassist-deploy.log"
           umask 077
@@ -97,6 +94,7 @@ jobs:
 
           DEST_DIR='${{ env.DEPLOY_PATH }}'
           PORT='${{ env.PORT }}'
+          if [ -z "${PORT:-}" ]; then PORT=8080; fi
           REF='origin/releases'
           REMOTE_ENV_INPUT="${1:-}"
 
@@ -148,26 +146,49 @@ jobs:
           APP_LOG="$HOME/logs/eassist-api.log"
           if [ -f "$APP_LOG" ]; then echo "== Last 200 lines of app log =="; tail -n 200 "$APP_LOG"; else echo "App log not found at $APP_LOG"; fi
           echo "== eAssist remote deploy end == $(date -Is)"
-REMOTE_SCRIPT
+          SH
+          chmod +x remote_deploy.sh
+
+      - name: Upload and run remote deploy script
+        run: |
+          set -euo pipefail
+          REMOTE_ENV_PATH="${REMOTE_ENV:-}"
+          SSH_TARGET="${SSH_USER:-gitdeploy}@${SSH_HOST}"
+          SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
+          SCP_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
+          if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; SCP_OPTS="$SCP_OPTS -P ${SSH_PORT}"; fi
+          scp $SCP_OPTS remote_deploy.sh "$SSH_TARGET:/tmp/eassist-remote-deploy.sh"
+          ssh $SSH_OPTS "$SSH_TARGET" "bash /tmp/eassist-remote-deploy.sh '$REMOTE_ENV_PATH'"
 
       - name: Fetch and print remote logs
         run: |
           set -euo pipefail
-          SSH_TARGET="${{ env.SSH_USER || 'gitdeploy' }}@${{ env.SSH_HOST }}"
+          SSH_TARGET="${SSH_USER:-gitdeploy}@${SSH_HOST}"
           SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
-          if [ -n "${{ env.SSH_PORT }}" ]; then SSH_OPTS="$SSH_OPTS -p ${{ env.SSH_PORT }}"; fi
+          SCP_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
+          if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; SCP_OPTS="$SCP_OPTS -P ${SSH_PORT}"; fi
           # Fetch deploy log
-          scp $SSH_OPTS "$SSH_TARGET:/tmp/eassist-deploy.log" ./deploy.log || echo "No remote deploy log found"
+          scp $SCP_OPTS "$SSH_TARGET:/tmp/eassist-deploy.log" ./deploy.log || echo "No remote deploy log found"
           echo "---- Remote deploy log (/tmp/eassist-deploy.log) ----" || true
           (sed -e 's/[[:cntrl:]]\[[0-9;]*m//g' deploy.log | tail -n 1000) || true
           # Fetch app log
-          scp $SSH_OPTS "$SSH_TARGET:~/logs/eassist-api.log" ./app.log || echo "No app log fetched"
+          scp $SCP_OPTS "$SSH_TARGET:~/logs/eassist-api.log" ./app.log || echo "No app log fetched"
           echo "---- App log (~/logs/eassist-api.log) tail ----" || true
           (tail -n 300 app.log) || true
 
-      - name: Post-deploy check (port 8080)
+      - name: Upload logs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eassist-deploy-logs
+          path: |
+            deploy.log
+            app.log
+
+      - name: Post-deploy check (port)
         run: |
           set -euo pipefail
           SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
-          if [ -n "${{ env.SSH_PORT }}" ]; then SSH_OPTS="$SSH_OPTS -p ${{ env.SSH_PORT }}"; fi
-          ssh $SSH_OPTS ${{ env.SSH_USER || 'gitdeploy' }}@${{ env.SSH_HOST }} "ss -ltn | grep -q ':${{ env.PORT }} ' && echo 'API listening on ${{ env.PORT }}' || (echo 'No listener on ${{ env.PORT }}' && exit 1)"
+          if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; fi
+          PORT_IN="${PORT:-8080}"
+          ssh $SSH_OPTS ${SSH_USER:-gitdeploy}@${SSH_HOST} "ss -ltn | grep -q ':${PORT_IN} ' && echo 'API listening on ${PORT_IN}' || (echo 'No listener on ${PORT_IN}' && exit 1)"
