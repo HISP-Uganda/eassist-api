@@ -120,6 +120,7 @@ jobs:
           set -euo pipefail
           LOG_FILE="/tmp/eassist-deploy.log"
           DONE_FILE="/tmp/eassist-remote-deploy.done"
+          UPLOADED_CONTROLLER="/tmp/eassistctl.sh"
           umask 077
           # Reset logs/markers
           : > "$LOG_FILE"
@@ -134,7 +135,7 @@ jobs:
           info() { printf "%s [INFO] %s\n" "$(ts)" "$*"; }
           warn() { printf "%s [WARN] %s\n" "$(ts)" "$*"; }
           error() { printf "%s [ERROR] %s\n" "$(ts)" "$*"; }
-          section() { local t="==== $* ===="; printf "%s %s\n" "$(ts)" "$t" >&3; printf "%s %s\n" "$(ts)" "$t"; }
+          section() { local t="==== $* ====\n"; printf "%s %s" "$(ts)" "$t" >&3; printf "%s %s" "$(ts)" "$t"; }
 
           section "eAssist remote deploy start"
 
@@ -142,7 +143,6 @@ jobs:
           PORT='${{ env.PORT }}'
           if [ -z "${PORT:-}" ]; then PORT=8080; fi
           REF='${{ env.DEPLOY_REF || 'origin/releases' }}'
-          # Extra safety: ensure REF has a sensible default even if interpolation failed
           if [ -z "${REF:-}" ] || [ "${REF}" = "''" ] || [ "${REF}" = '""' ]; then REF="origin/releases"; fi
           REMOTE_ENV_INPUT="${1:-}"
           SEED_MODE_IN="${2:-auto}"
@@ -150,16 +150,17 @@ jobs:
           info "Using DEST_DIR=$DEST_DIR PORT=$PORT REF=$REF SEED_MODE=$SEED_MODE_IN"
           info "REMOTE_ENV_INPUT=${REMOTE_ENV_INPUT:-<none>}"
 
-          # On exit, record failure unless we overwrite with success at the end
           _cleanup() { code=$?; printf "DONE=FAIL CODE=%s DATE=%s\n" "$code" "$(ts)" > "$DONE_FILE"; }
           trap _cleanup EXIT
 
-          # Ensure DEST_DIR exists and is owned by current user
           if [ ! -d "$DEST_DIR" ]; then sudo mkdir -p "$DEST_DIR" 2>/dev/null || mkdir -p "$DEST_DIR"; fi
           (sudo chown -R "$USER:$USER" "$DEST_DIR" 2>/dev/null || true)
 
+          # Ensure logs directory exists in deployment path
+          mkdir -p "$DEST_DIR/logs"
+          (sudo chown -R "$USER:$USER" "$DEST_DIR/logs" 2>/dev/null || true)
+
           section "Prerequisites"
-          # Best-effort prerequisites if passwordless sudo available; otherwise skip
           if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
             if ! command -v git >/dev/null 2>&1; then sudo apt-get update -y && sudo apt-get install -y git; fi
             if ! command -v node >/dev/null 2>&1; then curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs; fi
@@ -169,21 +170,40 @@ jobs:
           fi
 
           section "Fetch controller"
-          # Clone repo to a temp dir and ensure the controller is at REF
-          TMPDIR=""
-          if command -v mktemp >/dev/null 2>&1; then TMPDIR=$(mktemp -d) || true; else TMPDIR="/tmp/eassistctl.$$"; mkdir -p "$TMPDIR"; fi
-          info "TMPDIR=$TMPDIR"
-          git clone https://github.com/HISP-Uganda/eassist-api.git "$TMPDIR/src"
-          ( git -C "$TMPDIR/src" fetch --all --prune --tags --force || true )
-          if git -C "$TMPDIR/src" rev-parse --verify -q "$REF" >/dev/null 2>&1; then
-            git -C "$TMPDIR/src" reset --hard "$REF"
+          CONTROLLER=""
+          if [ -x "$UPLOADED_CONTROLLER" ]; then
+            info "Using uploaded controller at $UPLOADED_CONTROLLER"
+            CONTROLLER="$UPLOADED_CONTROLLER"
           else
-            warn "REF $REF not found; falling back to origin/releases"
-            git -C "$TMPDIR/src" reset --hard origin/releases || true
+            TMPDIR=""
+            if command -v mktemp >/dev/null 2>&1; then TMPDIR=$(mktemp -d) || true; else TMPDIR="/tmp/eassistctl.$$"; mkdir -p "$TMPDIR"; fi
+            info "TMPDIR=$TMPDIR"
+            git clone https://github.com/HISP-Uganda/eassist-api.git "$TMPDIR/src"
+            ( git -C "$TMPDIR/src" fetch --all --prune --tags --force || true )
+            if git -C "$TMPDIR/src" rev-parse --verify -q "$REF" >/dev/null 2>&1; then
+              git -C "$TMPDIR/src" reset --hard "$REF"
+            else
+              warn "REF $REF not found; falling back to origin/releases"
+              git -C "$TMPDIR/src" reset --hard origin/releases || true
+            fi
+            chmod +x "$TMPDIR/src/bin/eassistctl.sh" 2>/dev/null || true
+            CONTROLLER="$TMPDIR/src/bin/eassistctl.sh"
           fi
-          chmod +x "$TMPDIR/src/bin/eassistctl.sh" 2>/dev/null || true
 
-          # Determine env file to use: prefer uploaded temp env, else existing in DEST_DIR
+          # Robust controller check
+          if [ -z "$CONTROLLER" ] || [ ! -f "$CONTROLLER" ]; then
+            error "Controller script not found at expected path: $CONTROLLER"
+            exit 100
+          fi
+          if [ ! -x "$CONTROLLER" ]; then
+            warn "Controller script at $CONTROLLER is not executable; attempting to chmod +x"
+            chmod +x "$CONTROLLER" || true
+            if [ ! -x "$CONTROLLER" ]; then
+              error "Controller script at $CONTROLLER is still not executable after chmod"
+              exit 101
+            fi
+          fi
+
           ENV_FILE=""
           if [ -n "${REMOTE_ENV_INPUT:-}" ] && [ -f "${REMOTE_ENV_INPUT:-}" ]; then
             ENV_FILE="$REMOTE_ENV_INPUT"
@@ -193,16 +213,11 @@ jobs:
           info "ENV_FILE=${ENV_FILE:-<none>}"
 
           section "Deploy"
-          # Verify controller exists before executing
-          if [ ! -x "$TMPDIR/src/bin/eassistctl.sh" ]; then
-            error "Controller not found or not executable: $TMPDIR/src/bin/eassistctl.sh"
-            exit 127
-          fi
-          info "Running eassistctl deploy"
+          info "Running controller: $CONTROLLER"
           if [ -n "$ENV_FILE" ]; then
-            "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup --env-file "$ENV_FILE" --seed-mode "$SEED_MODE_IN"
+            "$CONTROLLER" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup --env-file "$ENV_FILE" --seed-mode "$SEED_MODE_IN"
           else
-            "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup --seed-mode "$SEED_MODE_IN"
+            "$CONTROLLER" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup --seed-mode "$SEED_MODE_IN"
           fi
 
           section "Post-deploy checks"
@@ -211,12 +226,11 @@ jobs:
             info "HTTP probe: / -> (may 404)"; (curl -i --max-time 5 http://127.0.0.1:"$PORT"/ || true)
             info "HTTP probe: /api/info"; (curl -i --max-time 5 http://127.0.0.1:"$PORT"/api/info || true)
           fi
-          APP_LOG="$HOME/logs/eassist-api.log"
+          APP_LOG="$DEST_DIR/logs/eassist-api.log"
           if [ -f "$APP_LOG" ]; then info "Last 200 lines of app log follow"; tail -n 200 "$APP_LOG"; else warn "App log not found at $APP_LOG"; fi
 
           section "eAssist remote deploy end"
 
-          # Mark success and clear the EXIT trap
           printf "DONE=OK DATE=%s\n" "$(ts)" > "$DONE_FILE"
           trap - EXIT
           SH
@@ -230,7 +244,16 @@ jobs:
           SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
           SCP_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
           if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; SCP_OPTS="$SCP_OPTS -P ${SSH_PORT}"; fi
+          # Upload remote deploy script
           scp $SCP_OPTS remote_deploy.sh "$SSH_TARGET:/tmp/eassist-remote-deploy.sh"
+          # Upload controller script from repo if available (prefer this over cloning on remote)
+          if [ -f "eassist-api/bin/eassistctl.sh" ]; then
+            scp $SCP_OPTS "eassist-api/bin/eassistctl.sh" "$SSH_TARGET:/tmp/eassistctl.sh" || true
+            ssh $SSH_OPTS "$SSH_TARGET" "chmod +x /tmp/eassistctl.sh" || true
+          elif [ -f "bin/eassistctl.sh" ]; then
+            scp $SCP_OPTS "bin/eassistctl.sh" "$SSH_TARGET:/tmp/eassistctl.sh" || true
+            ssh $SSH_OPTS "$SSH_TARGET" "chmod +x /tmp/eassistctl.sh" || true
+          fi
           set +e
           ssh $SSH_OPTS "$SSH_TARGET" "bash /tmp/eassist-remote-deploy.sh '$REMOTE_ENV_PATH' '${SEED_MODE:-auto}'"
           rc=$?
