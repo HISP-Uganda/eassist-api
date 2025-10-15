@@ -297,7 +297,7 @@ jobs:
             (sed -e 's/[[:cntrl:]]\[[0-9;]*m//g' deploy.log | tail -n 200) || true
           fi
           # Fetch app log; if fails, create placeholder
-          if scp $SCP_OPTS "$SSH_TARGET:~/logs/eassist-api.log" ./app.log; then
+          if scp $SCP_OPTS "$SSH_TARGET:/opt/eassist-api/logs/eassist-api.log" ./app.log; then
             :
           else
             echo "No app log fetched; creating placeholder"
