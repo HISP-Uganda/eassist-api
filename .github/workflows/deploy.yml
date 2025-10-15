@@ -71,23 +71,44 @@ jobs:
 
       - name: Remote deploy via eassistctl (nohup)
         run: |
+          set -euo pipefail
           REMOTE_ENV_PATH="${REMOTE_ENV:-}"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} "set -euo pipefail;
-            DEST_DIR='${{ env.DEPLOY_PATH }}'; PORT='${{ env.PORT }}'; REF='origin/releases'; REMOTE_ENV='${REMOTE_ENV_PATH}';
-            # Ensure prerequisites
-            if ! command -v git >/dev/null 2>&1; then sudo apt-get update -y && sudo apt-get install -y git; fi
-            if ! command -v node >/dev/null 2>&1; then curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs; fi
-            if ! command -v npm >/dev/null 2>&1; then sudo apt-get install -y npm; fi
-            # Ensure DEST_DIR exists and is owned by current user
-            sudo mkdir -p "$DEST_DIR" && sudo chown -R "$USER:$USER" "$DEST_DIR"
-            # Clone repo to a temp dir and run eassistctl from there to deploy into DEST_DIR (overlay-preserving .env)
-            TMPDIR=
-            if command -v mktemp >/dev/null 2>&1; then TMPDIR=$(mktemp -d) || true; else TMPDIR="/tmp/eassistctl.$$"; mkdir -p "$TMPDIR"; fi
-            git clone --depth 1 https://github.com/HISP-Uganda/eassist-api.git "$TMPDIR/src"
-            chmod +x "$TMPDIR/src/bin/eassistctl.sh" 2>/dev/null || true
-            ENV_ARG=""; if [ -n "${REMOTE_ENV:-}" ] && [ -f "${REMOTE_ENV:-}" ]; then ENV_ARG="--env-file '${REMOTE_ENV}'"; fi
-            "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup $ENV_ARG
-          '
+          SSH_TARGET="${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }}"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_TARGET" bash -s -- "$REMOTE_ENV_PATH" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          DEST_DIR='${{ env.DEPLOY_PATH }}'
+          PORT='${{ env.PORT }}'
+          REF='origin/releases'
+          REMOTE_ENV_INPUT="${1:-}"
+
+          # Ensure prerequisites
+          if ! command -v git >/dev/null 2>&1; then sudo apt-get update -y && sudo apt-get install -y git; fi
+          if ! command -v node >/dev/null 2>&1; then curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs; fi
+          if ! command -v npm >/dev/null 2>&1; then sudo apt-get install -y npm; fi
+
+          # Ensure DEST_DIR exists and is owned by current user
+          sudo mkdir -p "$DEST_DIR" && sudo chown -R "$USER:$USER" "$DEST_DIR"
+
+          # Clone repo to a temp dir and run eassistctl from there to deploy into DEST_DIR (overlay-preserving .env)
+          TMPDIR=""
+          if command -v mktemp >/dev/null 2>&1; then TMPDIR=$(mktemp -d) || true; else TMPDIR="/tmp/eassistctl.$$"; mkdir -p "$TMPDIR"; fi
+          git clone --depth 1 https://github.com/HISP-Uganda/eassist-api.git "$TMPDIR/src"
+          chmod +x "$TMPDIR/src/bin/eassistctl.sh" 2>/dev/null || true
+
+          # Determine env file to use: prefer uploaded temp env, else existing in DEST_DIR
+          ENV_FILE=""
+          if [ -n "${REMOTE_ENV_INPUT:-}" ] && [ -f "${REMOTE_ENV_INPUT:-}" ]; then
+            ENV_FILE="$REMOTE_ENV_INPUT"
+          elif [ -f "$DEST_DIR/.env" ]; then
+            ENV_FILE="$DEST_DIR/.env"
+          fi
+
+          if [ -n "$ENV_FILE" ]; then
+            "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup --env-file "$ENV_FILE"
+          else
+            "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup
+          fi
+REMOTE_SCRIPT
 
       - name: Post-deploy check (port 8080)
         run: |
