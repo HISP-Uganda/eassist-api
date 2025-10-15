@@ -21,7 +21,7 @@
     "seed:permissions": "node scripts/seed-permissions.js",
     "seed:superuser": "node scripts/seed-superuser.js",
     "seed:permissions-and-superuser": "node scripts/seed-permissions-and-superuser.js",
-    "seed:all": "npm run seed:permissions-and-superuser && npm run seed-initial",
+    "seed:all": "npm run seed:permissions-and-superuser && npm run seed:initial",
     "seed:moh": "node scripts/seed-ministry-health.js",
     "generate:openapi": "node scripts/generate-openapi.js",
     "bootstrap:admin": "npm run seed:permissions-and-superuser",
