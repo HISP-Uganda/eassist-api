@@ -12,6 +12,10 @@ on:
         required: false
         default: 'false'
         type: boolean
+      seed_mode:
+        description: 'Seeding mode: auto|skip|truncate'
+        required: false
+        default: 'auto'
 
 permissions:
   contents: read
@@ -34,6 +38,7 @@ jobs:
       SSH_HOST: ${{ secrets.DEPLOY_HOST }}
       SSH_USER: ${{ secrets.DEPLOY_USER }}
       SSH_PORT: ${{ secrets.DEPLOY_PORT }}
+      SEED_MODE: ${{ inputs.seed_mode || 'auto' }}
     steps:
       - name: Checkout repository (metadata only)
         uses: actions/checkout@v4
@@ -97,8 +102,9 @@ jobs:
           if [ -z "${PORT:-}" ]; then PORT=8080; fi
           REF='origin/releases'
           REMOTE_ENV_INPUT="${1:-}"
+          SEED_MODE_IN="${2:-auto}"
 
-          echo "Using DEST_DIR=$DEST_DIR PORT=$PORT REF=$REF"
+          echo "Using DEST_DIR=$DEST_DIR PORT=$PORT REF=$REF SEED_MODE=$SEED_MODE_IN"
           echo "REMOTE_ENV_INPUT=${REMOTE_ENV_INPUT:-<none>}"
 
           # Ensure DEST_DIR exists and is owned by current user
@@ -132,9 +138,9 @@ jobs:
 
           echo "== Running eassistctl deploy =="
           if [ -n "$ENV_FILE" ]; then
-            "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup --env-file "$ENV_FILE"
+            "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup --env-file "$ENV_FILE" --seed-mode "$SEED_MODE_IN"
           else
-            "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup
+            "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup --seed-mode "$SEED_MODE_IN"
           fi
 
           echo "== Post-deploy checks =="
@@ -158,7 +164,7 @@ jobs:
           SCP_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
           if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; SCP_OPTS="$SCP_OPTS -P ${SSH_PORT}"; fi
           scp $SCP_OPTS remote_deploy.sh "$SSH_TARGET:/tmp/eassist-remote-deploy.sh"
-          ssh $SSH_OPTS "$SSH_TARGET" "bash /tmp/eassist-remote-deploy.sh '$REMOTE_ENV_PATH'"
+          ssh $SSH_OPTS "$SSH_TARGET" "bash /tmp/eassist-remote-deploy.sh '$REMOTE_ENV_PATH' '${SEED_MODE:-auto}'"
 
       - name: Fetch and print remote logs
         run: |

@@ -21,6 +21,7 @@ REPO_URL="${REPO_URL:-https://github.com/HISP-Uganda/eassist-api.git}"
 REF="${REF:-origin/releases}"
 PORT="${PORT:-8080}"
 SERVICE_NAME="${SERVICE_NAME:-eassist-api.service}"
+SEED_MODE="${SEED_MODE:-auto}"  # auto|skip|truncate
 LOG_DIR_DEFAULT="$HOME/logs"
 PID_FILE_DEFAULT="$HOME/.eassist-api.pid"
 # ------------------------------------
@@ -53,6 +54,7 @@ Common options (env or flags):
   --ref REF          Git ref to deploy (default: ${REF})
   --env-file PATH    Path to .env to copy into DEST_DIR/.env (optional)
   --no-seed          Skip seeding during deploy
+  --seed-mode        Seeding mode: auto|skip|truncate (default: ${SEED_MODE})
   --nohup            Force nohup mode instead of systemd
   --systemd          Force systemd mode if available
   --port N           Override port (default: ${PORT})
@@ -79,6 +81,7 @@ while [[ $# -gt 0 ]]; do
     --ref) REF="${2:-}"; shift 2;;
     --env-file) ENV_FILE="${2:-}"; shift 2;;
     --no-seed) RUN_SEED=0; shift;;
+    --seed-mode) SEED_MODE="${2:-auto}"; shift 2;;
     --nohup) FORCE_NOHUP=1; shift;;
     --systemd) FORCE_SYSTEMD=1; shift;;
     --port) PORT="${2:-}"; shift 2;;
@@ -247,20 +250,60 @@ npm_has_script() {
   ( cd "$DEST_DIR" && node -e "try{const s=require('./package.json').scripts||{}; for(const k of Object.keys(s)) console.log(k)}catch(e){}" 2>/dev/null | grep -qx "$1" )
 }
 
-run_migrations() {
-  log "Running database migrations ..."
-  if npm_has_script migrate:prep; then ( cd "$DEST_DIR" && npm run migrate:prep ) || true; fi
-  if npm_has_script migrate; then ( cd "$DEST_DIR" && npm run migrate );
-  elif npm_has_script migrate:run; then ( cd "$DEST_DIR" && npm run migrate:run );
-  else warn "No migration script found (migrate or migrate:run)."; fi
+run_truncate_non_auth() {
+  if [ -f "$DEST_DIR/scripts/truncate-non-auth.sql" ]; then
+    log "Truncating non-auth data before reseeding ..."
+    ( cd "$DEST_DIR" && node scripts/run-sql.js scripts/truncate-non-auth.sql )
+  else
+    warn "truncate-non-auth.sql not found; skipping truncate step"
+  fi
+}
+
+run_seed_auto() {
+  # Decide whether to run full seed or only permissions/superuser based on existing data
+  local status json
+  json=$( ( cd "$DEST_DIR" && node scripts/check-seed.js ) 2>/dev/null || echo "" )
+  if [ -n "$json" ]; then
+    # parse minimal fields using node for robustness
+    status=$( node -e "try{const j=JSON.parse(process.argv[1]||'{}');const keys=['users','tickets','kb_articles','faqs','videos','kb_ratings','ticket_notes','ticket_events'];const has=keys.some(k=>+j[k]>0);console.log(has?'has':'empty')}catch(e){console.log('unknown')}" "$json" )
+  else
+    status="unknown"
+  fi
+  case "$status" in
+    empty)
+      log "Database appears empty; seeding full initial data (seed:all)"
+      if npm_has_script seed:all; then ( cd "$DEST_DIR" && npm run seed:all );
+      elif npm_has_script seed:initial; then ( cd "$DEST_DIR" && npm run seed:initial );
+      else warn "No seed:all or seed:initial script found"; fi
+      ;;
+    has)
+      log "Database has existing data; refreshing permissions/superuser only"
+      if npm_has_script seed:permissions-and-superuser; then ( cd "$DEST_DIR" && npm run seed:permissions-and-superuser );
+      elif npm_has_script bootstrap:admin; then ( cd "$DEST_DIR" && npm run bootstrap:admin );
+      else warn "No permissions bootstrap script found"; fi
+      ;;
+    *)
+      warn "Unable to detect DB state; running conservative permissions bootstrap"
+      if npm_has_script seed:permissions-and-superuser; then ( cd "$DEST_DIR" && npm run seed:permissions-and-superuser ); fi
+      ;;
+  esac
 }
 
 run_seed() {
-  log "Running database seeding ..."
-  if npm_has_script seed:all; then ( cd "$DEST_DIR" && npm run seed:all );
-  elif npm_has_script seed:initial; then ( cd "$DEST_DIR" && npm run seed:initial );
-  elif npm_has_script seed; then ( cd "$DEST_DIR" && npm run seed );
-  else warn "No seeding script found (seed:all / seed:initial / seed)."; fi
+  case "$SEED_MODE" in
+    skip)
+      log "Skipping seeding (--seed-mode=skip)"; return 0;;
+    truncate)
+      run_truncate_non_auth
+      # Fallthrough to full seed after truncate
+      if npm_has_script seed:all; then ( cd "$DEST_DIR" && npm run seed:all );
+      elif npm_has_script seed:initial; then ( cd "$DEST_DIR" && npm run seed:initial );
+      else warn "No seeding script found (seed:all / seed:initial)."; fi
+      ;;
+    auto|*)
+      run_seed_auto
+      ;;
+  esac
 }
 
 is_port_listening() {
