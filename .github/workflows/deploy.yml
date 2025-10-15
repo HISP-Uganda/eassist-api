@@ -117,7 +117,7 @@ jobs:
           set -euo pipefail
           cat > remote_deploy.sh <<'SH'
           #!/usr/bin/env bash
-          set -euo pipefail
+          set -Eeuox pipefail
           LOG_FILE="/tmp/eassist-deploy.log"
           DONE_FILE="/tmp/eassist-remote-deploy.done"
           UPLOADED_CONTROLLER="/tmp/eassistctl.sh"
@@ -144,6 +144,7 @@ jobs:
           section() { local t="==== $* ====\n"; printf "%s %s" "$(ts)" "$t" >&3; printf "%s %s" "$(ts)" "$t"; }
 
           section "eAssist remote deploy start"
+          info "whoami=$(whoami 2>/dev/null || echo n/a) uid=$(id -u 2>/dev/null || echo n/a) uname=$(uname -a 2>/dev/null || echo n/a)"
 
           DEST_DIR='${{ env.DEPLOY_PATH }}'
           PORT='${{ env.PORT }}'
@@ -168,6 +169,10 @@ jobs:
           touch "$DEST_DIR/logs/eassist-api.log"
 
           section "Prerequisites"
+          info "PATH=$PATH"
+          info "Node=$(node -v 2>&1 || echo 'not found')"
+          info "Npm=$(npm -v 2>&1 || echo 'not found')"
+          info "Git=$(git --version 2>&1 || echo 'not found')"
           if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
             if ! command -v git >/dev/null 2>&1; then sudo apt-get update -y && sudo apt-get install -y git; fi
             if ! command -v node >/dev/null 2>&1; then curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs; fi
@@ -376,7 +381,7 @@ jobs:
       - name: Fail if remote deploy failed
         if: always()
         shell: bash
-        run: |de
+        run: |
           set -euo pipefail
           if [ "${REMOTE_DEPLOY_RC}" != "0" ]; then
             echo "Remote deploy failed with code ${REMOTE_DEPLOY_RC}" >&2
