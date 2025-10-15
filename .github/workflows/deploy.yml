@@ -39,6 +39,7 @@ jobs:
       SSH_USER: ${{ secrets.DEPLOY_USER }}
       SSH_PORT: ${{ secrets.DEPLOY_PORT }}
       SEED_MODE: ${{ inputs.seed_mode || 'auto' }}
+      REMOTE_DEPLOY_RC: "0"
     steps:
       - name: Checkout repository (metadata only)
         uses: actions/checkout@v4
@@ -192,6 +193,11 @@ jobs:
           info "ENV_FILE=${ENV_FILE:-<none>}"
 
           section "Deploy"
+          # Verify controller exists before executing
+          if [ ! -x "$TMPDIR/src/bin/eassistctl.sh" ]; then
+            error "Controller not found or not executable: $TMPDIR/src/bin/eassistctl.sh"
+            exit 127
+          fi
           info "Running eassistctl deploy"
           if [ -n "$ENV_FILE" ]; then
             "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup --env-file "$ENV_FILE" --seed-mode "$SEED_MODE_IN"
@@ -238,20 +244,27 @@ jobs:
               echo "Remote deploy may have failed; no success marker found."
             fi
           fi
+          echo "REMOTE_DEPLOY_RC=$rc" >> "$GITHUB_ENV"
           if [ "$rc" -ne 0 ]; then
             echo "Remote deploy script exited with code $rc" >&2
-            exit "$rc"
+            # Do not exit here; we will fetch logs and fail at the end
           fi
 
       - name: Fetch and print remote logs
+        if: always()
         run: |
           set -euo pipefail
           SSH_TARGET="${SSH_USER:-gitdeploy}@${SSH_HOST}"
           SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
           SCP_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
           if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; SCP_OPTS="$SCP_OPTS -P ${SSH_PORT}"; fi
-          # Fetch deploy log
-          scp $SCP_OPTS "$SSH_TARGET:/tmp/eassist-deploy.log" ./deploy.log || echo "No remote deploy log found"
+          # Fetch deploy log; if scp fails, create an empty placeholder
+          if scp $SCP_OPTS "$SSH_TARGET:/tmp/eassist-deploy.log" ./deploy.log; then
+            :
+          else
+            echo "No remote deploy log fetched; creating placeholder"
+            : > deploy.log
+          fi
           # Print concise summary and small tail to keep Action output clear
           if [ -f deploy.log ]; then
             echo "::group::Deploy summary (sections, warnings, errors)"
@@ -260,8 +273,13 @@ jobs:
             echo "---- Deploy log tail (last 200 lines) ----"
             (sed -e 's/[[:cntrl:]]\[[0-9;]*m//g' deploy.log | tail -n 200) || true
           fi
-          # Fetch app log
-          scp $SCP_OPTS "$SSH_TARGET:~/logs/eassist-api.log" ./app.log || echo "No app log fetched"
+          # Fetch app log; if fails, create placeholder
+          if scp $SCP_OPTS "$SSH_TARGET:~/logs/eassist-api.log" ./app.log; then
+            :
+          else
+            echo "No app log fetched; creating placeholder"
+            : > app.log
+          fi
           echo "---- App log tail (last 200 lines) ----" || true
           (tail -n 200 app.log) || true
 
@@ -287,6 +305,7 @@ jobs:
             echo "- Port: ${PORT}"
             echo "- Ref: ${DEPLOY_REF:-origin/releases}"
             echo "- Seed mode: ${SEED_MODE}"
+            echo "- Remote exit code: ${REMOTE_DEPLOY_RC}"
             echo
             echo "### Logs"
             echo "- Deploy log: uploaded as artifact 'eassist-deploy-logs' (deploy.log)"
@@ -294,9 +313,20 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post-deploy check (port)
+        if: ${{ env.REMOTE_DEPLOY_RC == '0' }}
         run: |
           set -euo pipefail
           SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
           if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; fi
           PORT_IN="${PORT:-8080}"
           ssh $SSH_OPTS ${SSH_USER:-gitdeploy}@${SSH_HOST} "ss -ltn | grep -q ':${PORT_IN} ' && echo 'API listening on ${PORT_IN}' || (echo 'No listener on ${PORT_IN}' && exit 1)"
+
+      - name: Fail if remote deploy failed
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${REMOTE_DEPLOY_RC}" != "0" ]; then
+            echo "Remote deploy failed with code ${REMOTE_DEPLOY_RC}" >&2
+            exit 1
+          fi
