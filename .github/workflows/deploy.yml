@@ -10,7 +10,7 @@ on:
       force_deploy:
         description: 'Force deployment even if no changes'
         required: false
-        default: 'false'
+        default: false
         type: boolean
       seed_mode:
         description: 'Seeding mode: auto|skip|truncate'
@@ -44,6 +44,31 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Compute DEPLOY_REF
+        id: compute_ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF_DEFAULT="origin/releases"
+          EVENT_NAME="${GITHUB_EVENT_NAME:-}"
+          REF_OUT="${REF_DEFAULT}"
+          if [ "$EVENT_NAME" = "push" ]; then
+            REF_OUT="${GITHUB_SHA}"
+          elif [ "$EVENT_NAME" = "release" ]; then
+            # Prefer the release tag if present, else fall back to commit SHA
+            TAG_NAME=$(jq -r '.release.tag_name // empty' < "$GITHUB_EVENT_PATH" || true)
+            if [ -n "${TAG_NAME:-}" ] && [ "${TAG_NAME}" != "null" ]; then
+              REF_OUT="refs/tags/${TAG_NAME}"
+            else
+              REF_OUT="${GITHUB_SHA}"
+            fi
+          else
+            # workflow_dispatch or others -> default to releases branch head on remote
+            REF_OUT="${REF_DEFAULT}"
+          fi
+          echo "Using DEPLOY_REF=$REF_OUT"
+          echo "DEPLOY_REF=$REF_OUT" >> "$GITHUB_ENV"
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -93,38 +118,68 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
           LOG_FILE="/tmp/eassist-deploy.log"
+          DONE_FILE="/tmp/eassist-remote-deploy.done"
           umask 077
-          exec > >(tee -a "$LOG_FILE") 2>&1
-          echo "== eAssist remote deploy start == $(date -Is)"
+          # Reset logs/markers
+          : > "$LOG_FILE"
+          rm -f "$DONE_FILE" 2>/dev/null || true
+
+          # Preserve original stdout/stderr for concise status, then log everything to file
+          exec 3>&1 4>&2
+          exec >>"$LOG_FILE" 2>&1
+
+          ts() { date -Is; }
+          say() { printf "%s %s\n" "$(ts)" "$*" >&3; }
+          info() { printf "%s [INFO] %s\n" "$(ts)" "$*"; }
+          warn() { printf "%s [WARN] %s\n" "$(ts)" "$*"; }
+          error() { printf "%s [ERROR] %s\n" "$(ts)" "$*"; }
+          section() { local t="==== $* ===="; printf "%s %s\n" "$(ts)" "$t" >&3; printf "%s %s\n" "$(ts)" "$t"; }
+
+          section "eAssist remote deploy start"
 
           DEST_DIR='${{ env.DEPLOY_PATH }}'
           PORT='${{ env.PORT }}'
           if [ -z "${PORT:-}" ]; then PORT=8080; fi
-          REF='origin/releases'
+          REF='${{ env.DEPLOY_REF || 'origin/releases' }}'
+          # Extra safety: ensure REF has a sensible default even if interpolation failed
+          if [ -z "${REF:-}" ] || [ "${REF}" = "''" ] || [ "${REF}" = '""' ]; then REF="origin/releases"; fi
           REMOTE_ENV_INPUT="${1:-}"
           SEED_MODE_IN="${2:-auto}"
 
-          echo "Using DEST_DIR=$DEST_DIR PORT=$PORT REF=$REF SEED_MODE=$SEED_MODE_IN"
-          echo "REMOTE_ENV_INPUT=${REMOTE_ENV_INPUT:-<none>}"
+          info "Using DEST_DIR=$DEST_DIR PORT=$PORT REF=$REF SEED_MODE=$SEED_MODE_IN"
+          info "REMOTE_ENV_INPUT=${REMOTE_ENV_INPUT:-<none>}"
+
+          # On exit, record failure unless we overwrite with success at the end
+          _cleanup() { code=$?; printf "DONE=FAIL CODE=%s DATE=%s\n" "$code" "$(ts)" > "$DONE_FILE"; }
+          trap _cleanup EXIT
 
           # Ensure DEST_DIR exists and is owned by current user
           if [ ! -d "$DEST_DIR" ]; then sudo mkdir -p "$DEST_DIR" 2>/dev/null || mkdir -p "$DEST_DIR"; fi
           (sudo chown -R "$USER:$USER" "$DEST_DIR" 2>/dev/null || true)
 
+          section "Prerequisites"
           # Best-effort prerequisites if passwordless sudo available; otherwise skip
           if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
             if ! command -v git >/dev/null 2>&1; then sudo apt-get update -y && sudo apt-get install -y git; fi
             if ! command -v node >/dev/null 2>&1; then curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs; fi
             if ! command -v npm >/dev/null 2>&1; then sudo apt-get install -y npm; fi
           else
-            echo "[WARN] Skipping prerequisite installs (no passwordless sudo). Ensure git/node/npm are installed."
+            warn "Skipping prerequisite installs (no passwordless sudo). Ensure git/node/npm are installed."
           fi
 
-          # Clone repo to a temp dir and run eassistctl from there to deploy into DEST_DIR (overlay-preserving .env)
+          section "Fetch controller"
+          # Clone repo to a temp dir and ensure the controller is at REF
           TMPDIR=""
           if command -v mktemp >/dev/null 2>&1; then TMPDIR=$(mktemp -d) || true; else TMPDIR="/tmp/eassistctl.$$"; mkdir -p "$TMPDIR"; fi
-          echo "TMPDIR=$TMPDIR"
-          git clone --depth 1 https://github.com/HISP-Uganda/eassist-api.git "$TMPDIR/src"
+          info "TMPDIR=$TMPDIR"
+          git clone https://github.com/HISP-Uganda/eassist-api.git "$TMPDIR/src"
+          ( git -C "$TMPDIR/src" fetch --all --prune --tags --force || true )
+          if git -C "$TMPDIR/src" rev-parse --verify -q "$REF" >/dev/null 2>&1; then
+            git -C "$TMPDIR/src" reset --hard "$REF"
+          else
+            warn "REF $REF not found; falling back to origin/releases"
+            git -C "$TMPDIR/src" reset --hard origin/releases || true
+          fi
           chmod +x "$TMPDIR/src/bin/eassistctl.sh" 2>/dev/null || true
 
           # Determine env file to use: prefer uploaded temp env, else existing in DEST_DIR
@@ -134,24 +189,30 @@ jobs:
           elif [ -f "$DEST_DIR/.env" ]; then
             ENV_FILE="$DEST_DIR/.env"
           fi
-          echo "ENV_FILE=${ENV_FILE:-<none>}"
+          info "ENV_FILE=${ENV_FILE:-<none>}"
 
-          echo "== Running eassistctl deploy =="
+          section "Deploy"
+          info "Running eassistctl deploy"
           if [ -n "$ENV_FILE" ]; then
             "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup --env-file "$ENV_FILE" --seed-mode "$SEED_MODE_IN"
           else
             "$TMPDIR/src/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup --seed-mode "$SEED_MODE_IN"
           fi
 
-          echo "== Post-deploy checks =="
+          section "Post-deploy checks"
           if command -v ss >/dev/null 2>&1; then ss -ltn | (grep ":$PORT" || true); fi
           if command -v curl >/dev/null 2>&1; then
-            echo "HTTP probe: / -> (may 404)"; (curl -i --max-time 5 http://127.0.0.1:"$PORT"/ || true)
-            echo "HTTP probe: /api/info"; (curl -i --max-time 5 http://127.0.0.1:"$PORT"/api/info || true)
+            info "HTTP probe: / -> (may 404)"; (curl -i --max-time 5 http://127.0.0.1:"$PORT"/ || true)
+            info "HTTP probe: /api/info"; (curl -i --max-time 5 http://127.0.0.1:"$PORT"/api/info || true)
           fi
           APP_LOG="$HOME/logs/eassist-api.log"
-          if [ -f "$APP_LOG" ]; then echo "== Last 200 lines of app log =="; tail -n 200 "$APP_LOG"; else echo "App log not found at $APP_LOG"; fi
-          echo "== eAssist remote deploy end == $(date -Is)"
+          if [ -f "$APP_LOG" ]; then info "Last 200 lines of app log follow"; tail -n 200 "$APP_LOG"; else warn "App log not found at $APP_LOG"; fi
+
+          section "eAssist remote deploy end"
+
+          # Mark success and clear the EXIT trap
+          printf "DONE=OK DATE=%s\n" "$(ts)" > "$DONE_FILE"
+          trap - EXIT
           SH
           chmod +x remote_deploy.sh
 
@@ -164,7 +225,23 @@ jobs:
           SCP_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=yes"
           if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; SCP_OPTS="$SCP_OPTS -P ${SSH_PORT}"; fi
           scp $SCP_OPTS remote_deploy.sh "$SSH_TARGET:/tmp/eassist-remote-deploy.sh"
+          set +e
           ssh $SSH_OPTS "$SSH_TARGET" "bash /tmp/eassist-remote-deploy.sh '$REMOTE_ENV_PATH' '${SEED_MODE:-auto}'"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 255 ]; then
+            echo "SSH exited with 255; checking remote completion marker..."
+            if ssh $SSH_OPTS "$SSH_TARGET" "test -f /tmp/eassist-remote-deploy.done && grep -q '^DONE=OK' /tmp/eassist-remote-deploy.done"; then
+              echo "Remote deploy completed successfully despite SSH 255 (marker found)."
+              rc=0
+            else
+              echo "Remote deploy may have failed; no success marker found."
+            fi
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "Remote deploy script exited with code $rc" >&2
+            exit "$rc"
+          fi
 
       - name: Fetch and print remote logs
         run: |
@@ -175,12 +252,18 @@ jobs:
           if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; SCP_OPTS="$SCP_OPTS -P ${SSH_PORT}"; fi
           # Fetch deploy log
           scp $SCP_OPTS "$SSH_TARGET:/tmp/eassist-deploy.log" ./deploy.log || echo "No remote deploy log found"
-          echo "---- Remote deploy log (/tmp/eassist-deploy.log) ----" || true
-          (sed -e 's/[[:cntrl:]]\[[0-9;]*m//g' deploy.log | tail -n 1000) || true
+          # Print concise summary and small tail to keep Action output clear
+          if [ -f deploy.log ]; then
+            echo "::group::Deploy summary (sections, warnings, errors)"
+            grep -E "==== |\[WARN\]|\[ERROR\]" deploy.log || true
+            echo "::endgroup::"
+            echo "---- Deploy log tail (last 200 lines) ----"
+            (sed -e 's/[[:cntrl:]]\[[0-9;]*m//g' deploy.log | tail -n 200) || true
+          fi
           # Fetch app log
           scp $SCP_OPTS "$SSH_TARGET:~/logs/eassist-api.log" ./app.log || echo "No app log fetched"
-          echo "---- App log (~/logs/eassist-api.log) tail ----" || true
-          (tail -n 300 app.log) || true
+          echo "---- App log tail (last 200 lines) ----" || true
+          (tail -n 200 app.log) || true
 
       - name: Upload logs as artifact
         if: always()
@@ -190,6 +273,25 @@ jobs:
           path: |
             deploy.log
             app.log
+
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## eAssist API Deployment"
+            echo
+            echo "- Host: ${SSH_HOST}"
+            echo "- User: ${SSH_USER}"
+            echo "- Dest dir: ${DEPLOY_PATH}"
+            echo "- Port: ${PORT}"
+            echo "- Ref: ${DEPLOY_REF:-origin/releases}"
+            echo "- Seed mode: ${SEED_MODE}"
+            echo
+            echo "### Logs"
+            echo "- Deploy log: uploaded as artifact 'eassist-deploy-logs' (deploy.log)"
+            echo "- App log: uploaded as artifact 'eassist-deploy-logs' (app.log)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post-deploy check (port)
         run: |

@@ -160,6 +160,8 @@ VALUES
   ('system.settings.branding.update', 'System Settings Branding Update', NULL),
   ('system.settings.emailTemplates.read', 'System Settings EmailTemplates Read', NULL),
   ('system.settings.emailTemplates.update', 'System Settings EmailTemplates Update', NULL),
+  ('system.settings.messaging.read', 'System Settings Messaging Read', NULL),
+  ('system.settings.messaging.update', 'System Settings Messaging Update', NULL),
   ('system.files.list', 'System Files List', NULL),
   ('system.files.read', 'System Files Read', NULL),
   ('system.files.delete', 'System Files Delete', NULL),
@@ -183,7 +185,11 @@ VALUES
   ('admin.me.update', 'Admin Me Update', NULL),
   ('admin.preferences.read', 'Admin Preferences Read', NULL),
   ('admin.preferences.update', 'Admin Preferences Update', NULL),
-  ('admin.notifications.read', 'Admin Notifications Read', NULL)
+  ('admin.notifications.read', 'Admin Notifications Read', NULL),
+  ('system.messages.list', 'System Messages List', NULL),
+  ('system.messages.read', 'System Messages Read', NULL),
+  ('system.messages.send', 'System Messages Send', NULL),
+  ('system.messages.update', 'System Messages Update', NULL)
 ON CONFLICT (code) DO UPDATE
   SET name = EXCLUDED.name,
       description = COALESCE(EXCLUDED.description, public.permissions.description),
