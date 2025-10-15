@@ -67,7 +67,7 @@ jobs:
 
       - name: Read version
         id: v
-        run: echo "version=$(node -e "console.log(require('./package.json').version)")" >> $GITHUB_OUTPUT
+        run: echo "version=$(node -e \"console.log(require('./package.json').version)\")" >> $GITHUB_OUTPUT
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -126,7 +126,13 @@ jobs:
             fi
 
             echo "[Deploy] Running migrations"
-            npm run migrate:run 2>/dev/null || npm run migrate 2>/dev/null || echo "[Deploy] No migrations to run or migration failed (continuing)"
+            if npm run migrate:run 2>/dev/null; then
+              echo "[Deploy] Migrations (migrate:run) completed"
+            elif npm run migrate 2>/dev/null; then
+              echo "[Deploy] Migrations (migrate) completed"
+            else
+              echo "[Deploy] ERROR: Migration failed"; exit 1
+            fi
 
             echo "[Deploy] Restarting via nohup"
             chmod +x ./bin/eassistctl.sh 2>/dev/null || true
