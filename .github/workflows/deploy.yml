@@ -30,7 +30,7 @@ jobs:
           || github.event_name == 'workflow_dispatch' }}
     env:
       DEPLOY_PATH: /opt/eassist-api
-      GIT_SHA: ${{ github.sha }}
+      PORT: 8080
     steps:
       - name: Checkout repository (metadata only)
         uses: actions/checkout@v4
@@ -53,33 +53,56 @@ jobs:
           fi
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Prepare .env artifact (optional)
-        if: ${{ secrets.EASSIST_API_ENV != '' }}
-        run: |
-          cat > eassist-api.env <<'EOF'
-          ${{ secrets.EASSIST_API_ENV }}
-          EOF
-          chmod 600 eassist-api.env
-
-      - name: Upload .env to server (optional)
-        if: ${{ secrets.EASSIST_API_ENV != '' }}
-        run: |
-          REMOTE_ENV="/tmp/eassist-api.env.${GITHUB_RUN_NUMBER}"
-          echo "REMOTE_ENV=$REMOTE_ENV" >> "$GITHUB_ENV"
-          scp -o BatchMode=yes -o StrictHostKeyChecking=yes eassist-api.env ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }}:"$REMOTE_ENV"
-
-      - name: Remote deploy via systemd script
+      - name: Prepare and upload .env if provided
+        env:
+          EASSIST_API_ENV: ${{ secrets.EASSIST_API_ENV }}
         run: |
           set -euo pipefail
-          BRANCH="${GITHUB_REF_NAME}"
-          REMOTE_ENV_PATH="${REMOTE_ENV:-}"
-          REMOTE_CMD=("bash" "~/releases/deploy-eassist-api.sh" "--branch" "$BRANCH")
-          if [ -n "$REMOTE_ENV_PATH" ]; then
-            REMOTE_CMD=("bash" "~/releases/deploy-eassist-api.sh" "--env" "$REMOTE_ENV_PATH" "--branch" "$BRANCH")
+          if [ -n "${EASSIST_API_ENV:-}" ]; then
+            echo "Preparing .env from secret"
+            printf '%s\n' "$EASSIST_API_ENV" > eassist-api.env
+            chmod 600 eassist-api.env
+            REMOTE_ENV="/tmp/eassist-api.env.${GITHUB_RUN_NUMBER}"
+            echo "REMOTE_ENV=$REMOTE_ENV" >> "$GITHUB_ENV"
+            scp -o BatchMode=yes -o StrictHostKeyChecking=yes eassist-api.env ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }}:"$REMOTE_ENV"
+          else
+            echo "No EASSIST_API_ENV secret provided; will preserve existing .env on server"
           fi
-          echo "Running: ${REMOTE_CMD[*]} on ${{ secrets.DEPLOY_HOST }} as ${{ secrets.DEPLOY_USER || 'gitdeploy' }}"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} "${REMOTE_CMD[@]}"
+
+      - name: Remote deploy via eassistctl (nohup)
+        env:
+          REMOTE_ENV: ${{ env.REMOTE_ENV }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} 'set -euo pipefail
+            DEST_DIR="'"${{ env.DEPLOY_PATH }}"'"
+            PORT="'"${{ env.PORT }}"'"
+            REF="origin/releases"; [ "'"${GITHUB_REF_NAME}"'" = "main" ] && REF="origin/main"
+
+            # Ensure prerequisites
+            if ! command -v git >/dev/null 2>&1; then sudo apt-get update -y && sudo apt-get install -y git; fi
+            if ! command -v node >/dev/null 2>&1; then curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs; fi
+            if ! command -v npm >/dev/null 2>&1; then sudo apt-get install -y npm; fi
+
+            # Prepare directory and ownership for current user
+            sudo mkdir -p "$DEST_DIR"
+            sudo chown -R "$USER:$USER" "$DEST_DIR"
+
+            # Bootstrap repo if missing (so eassistctl exists)
+            if [ ! -d "$DEST_DIR/.git" ]; then
+              git clone https://github.com/HISP-Uganda/eassist-api.git "$DEST_DIR"
+            fi
+            chmod +x "$DEST_DIR/bin/eassistctl.sh" 2>/dev/null || true
+
+            # Apply .env if uploaded
+            ENV_ARG=""
+            if [ -n "'"${REMOTE_ENV:-}"'" ] && [ -f "'"${REMOTE_ENV:-}"'" ]; then
+              ENV_ARG="--env-file '"${REMOTE_ENV}"'"
+            fi
+
+            # Deploy using eassistctl (nohup to avoid sudo/systemd)
+            "$DEST_DIR/bin/eassistctl.sh" deploy --dir "$DEST_DIR" --ref "$REF" --port "$PORT" --nohup $ENV_ARG
+          '
 
       - name: Post-deploy check (port 8080)
         run: |
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} "ss -ltn | grep -q ':8080 ' && echo 'API listening on 8080' || (echo 'No listener on 8080' && exit 1)"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} "ss -ltn | grep -q ':${{ env.PORT }} ' && echo 'API listening on ${{ env.PORT }}' || (echo 'No listener on ${{ env.PORT }}' && exit 1)"
