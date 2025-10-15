@@ -67,7 +67,7 @@ jobs:
 
       - name: Read version
         id: v
-        run: echo "version=$(node -e "console.log(require('./package.json').version)")" >> $GITHUB_OUTPUT
+        run: echo "version=$(node -e \"console.log(require('./package.json').version)\")" >> $GITHUB_OUTPUT
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -95,66 +95,59 @@ jobs:
             ./ \
             ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/
 
-      - name: Remote deploy
+      - name: Remote deploy (nohup, no sudo)
         env:
           BUILD_LABEL: v${{ steps.v.outputs.version }}+ci.${{ github.run_number }}
         run: |
           ssh -o StrictHostKeyChecking=yes \
             ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} \
             'set -euo pipefail
-            echo "[Deploy] Starting systemd-based deployment at $(date)"
+            echo "[Deploy] Starting user-space (nohup) deployment at $(date)"
             cd ${{ env.DEPLOY_PATH }} || { echo "[Deploy] Failed to change to deploy directory"; exit 1; }
-            
-            echo "[Deploy] Installing dependencies"
-            if ! npm ci --only=production --no-audit; then
-              echo "[Deploy] npm ci failed, trying npm install"
-              npm install --only=production --no-audit || { echo "[Deploy] Failed to install dependencies"; exit 1; }
+
+            # Provision .env from secret if provided; ensure PORT=8080
+            if [ -n "${{ secrets.EASSIST_API_ENV || '' }}" ]; then
+              printf "%s\n" "${{ secrets.EASSIST_API_ENV }}" > .env
             fi
-            
-            echo "[Deploy] Running migrations"
-            npm run migrate:run 2>/dev/null || npm run migrate 2>/dev/null || echo "[Deploy] No migrations to run or migration failed (continuing)"
-            
-            echo "[Deploy] Setting up systemd service"
-            # Copy the service file to the systemd directory
-            sudo cp ${{ env.DEPLOY_PATH }}/eassist-api.service /etc/systemd/system/eassist-api.service
-            
-            # Reload systemd to recognize the new service file
-            sudo systemctl daemon-reload
-            
-            # Enable the service to start on boot
-            sudo systemctl enable eassist-api.service
-            
-            echo "[Deploy] Restarting eassist-api service"
-            # The ExecStartPre in the service file will handle port cleanup
-            sudo systemctl restart eassist-api.service
-            
-            echo "[Deploy] Waiting for service to become active..."
-            sleep 5 # Give it a moment to start
-            
-            # Check the service status
-            if ! sudo systemctl is-active --quiet eassist-api.service; then
-              echo "[Deploy] ERROR: Service failed to start."
-              echo "[Deploy] Displaying service status and recent logs:"
-              sudo systemctl status --no-pager -l eassist-api.service || true
-              sudo journalctl -u eassist-api.service -n 50 --no-pager || true
-              exit 1
-            fi
-            
-            echo "[Deploy] ✅ Service is active. Verifying it is listening on port 8080."
-            # Final verification loop
-            for i in $(seq 1 15); do
-              if sudo ss -ltn | grep -q ":8080 "; then
-                echo "[Deploy] ✅ Service is listening on port 8080."
-                sudo systemctl status --no-pager -l eassist-api.service
-                echo "[Deploy] ✅ Deployment successful!"
-                exit 0
+            if [ -f .env ]; then
+              if grep -q "^PORT=" .env; then
+                sed -i.bak "s/^PORT=.*/PORT=8080/" .env && rm -f .env.bak || true
+              else
+                printf "\nPORT=8080\n" >> .env
               fi
-              echo "[Deploy] Waiting for port 8080 to become active... (attempt $i/15)"
-              sleep 2
+            else
+              echo "[Deploy] ERROR: Missing .env and no EASSIST_API_ENV secret provided"; exit 1
+            fi
+
+            echo "[Deploy] Installing dependencies on server"
+            if ! npm ci --omit=dev --no-audit; then
+              echo "[Deploy] npm ci failed, trying npm install"
+              npm install --omit=dev --no-audit || { echo "[Deploy] Failed to install dependencies"; exit 1; }
+            fi
+
+            echo "[Deploy] Running migrations"
+            if npm run migrate:run 2>/dev/null; then
+              echo "[Deploy] Migrations (migrate:run) completed"
+            elif npm run migrate 2>/dev/null; then
+              echo "[Deploy] Migrations (migrate) completed"
+            else
+              echo "[Deploy] ERROR: Migration failed"; exit 1
+            fi
+
+            echo "[Deploy] Restarting via nohup"
+            chmod +x ./bin/eassistctl.sh 2>/dev/null || true
+            ./bin/eassistctl.sh restart --dir "${{ env.DEPLOY_PATH }}" --port 8080 --nohup || { echo "[Deploy] Restart failed"; exit 1; }
+
+            echo "[Deploy] Verifying port 8080"
+            for i in $(seq 1 30); do
+              if command -v ss >/dev/null 2>&1; then
+                ss -ltn | grep -q ":8080 " && { echo "[Deploy] ✅ Listening on 8080"; exit 0; }
+              elif command -v lsof >/dev/null 2>&1; then
+                lsof -ti:8080 >/dev/null 2>&1 && { echo "[Deploy] ✅ Listening on 8080"; exit 0; }
+              else
+                curl -fsS http://localhost:8080/ >/dev/null 2>&1 && { echo "[Deploy] ✅ Responding on 8080"; exit 0; }
+              fi
+              echo "[Deploy] Waiting for port 8080 to become active... (attempt $i/30)"; sleep 2
             done
-            
-            echo "[Deploy] ❌ ERROR: Service started but is not listening on port 8080."
-            sudo systemctl status --no-pager -l eassist-api.service || true
-            sudo journalctl -u eassist-api.service -n 50 --no-pager || true
-            exit 1
+            echo "[Deploy] ❌ ERROR: Service not listening on port 8080"; exit 1
             '
