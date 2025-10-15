@@ -178,6 +178,9 @@ export const PERMISSIONS = Object.freeze({
   SYS_SETTINGS_BRANDING_UPDATE: "system.settings.branding.update",
   SYS_SETTINGS_EMAIL_TEMPLATES_READ: "system.settings.emailTemplates.read",
   SYS_SETTINGS_EMAIL_TEMPLATES_UPDATE: "system.settings.emailTemplates.update",
+  // New granular: Messaging settings
+  SYS_SETTINGS_MESSAGING_READ: "system.settings.messaging.read",
+  SYS_SETTINGS_MESSAGING_UPDATE: "system.settings.messaging.update",
 
   // System: Files & Audit
   SYS_FILES_LIST: "system.files.list",
@@ -377,6 +380,9 @@ export const PERMISSION_GROUPS = Object.freeze({
     PERMISSIONS.SYS_SETTINGS_BRANDING_UPDATE,
     PERMISSIONS.SYS_SETTINGS_EMAIL_TEMPLATES_READ,
     PERMISSIONS.SYS_SETTINGS_EMAIL_TEMPLATES_UPDATE,
+    // New: messaging settings
+    PERMISSIONS.SYS_SETTINGS_MESSAGING_READ,
+    PERMISSIONS.SYS_SETTINGS_MESSAGING_UPDATE,
     PERMISSIONS.SETTINGS_MANAGE,
   ],
   system_workflows: [
@@ -558,6 +564,9 @@ export const PERMISSION_LABELS = Object.freeze({
   "system.settings.branding.update": "Settings: Branding Update",
   "system.settings.emailTemplates.read": "Settings: Email Templates Read",
   "system.settings.emailTemplates.update": "Settings: Email Templates Update",
+  // New: Messaging settings
+  "system.settings.messaging.read": "Settings: Messaging Read",
+  "system.settings.messaging.update": "Settings: Messaging Update",
 
   // Files & Audit
   "system.files.list": "Files: List",

@@ -15,20 +15,31 @@
 # - PORT=8080
 set -euo pipefail
 
+# Resolve script directory for relative paths (robust to nounset and array indexing)
+# Using a guard for BASH_SOURCE to avoid unbound array expansion under `set -u`.
+if [ -n "${BASH_SOURCE-}" ] && [ -n "${BASH_SOURCE[0]-}" ]; then
+  _eassist_src="${BASH_SOURCE[0]}"
+else
+  _eassist_src="$0"
+fi
+SCRIPT_DIR="$(cd "$(dirname "$_eassist_src")" && pwd)"
+
 # ------------- Defaults -------------
 DEST_DIR="${DEST_DIR:-/opt/eassist-api}"
 REPO_URL="${REPO_URL:-https://github.com/HISP-Uganda/eassist-api.git}"
 REF="${REF:-origin/releases}"
 PORT="${PORT:-8080}"
 SERVICE_NAME="${SERVICE_NAME:-eassist-api.service}"
-SEED_MODE="${SEED_MODE:-auto}"  # auto|skip|truncate
-LOG_DIR_DEFAULT="$HOME/logs"
+SEED_MODE="${SEED_MODE:-auto}"
+LOG_DIR_DEFAULT="${LOG_DIR_DEFAULT:-$DEST_DIR/logs}"
 PID_FILE_DEFAULT="$HOME/.eassist-api.pid"
 # ------------------------------------
 
-log()  { printf '%s\n' "[INFO] $*"; }
-warn() { printf '%s\n' "[WARN] $*" >&2; }
-err()  { printf '%s\n' "[ERROR] $*" >&2; }
+ts()   { date -Is; }
+log()  { printf '%s\n' "$(ts) [INFO] $*"; }
+warn() { printf '%s\n' "$(ts) [WARN] $*" >&2; }
+err()  { printf '%s\n' "$(ts) [ERROR] $*" >&2; }
+section() { printf '%s ==== %s ====\n' "$(ts)" "$*"; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || { err "Missing command: $1"; exit 1; }; }
 exists() { command -v "$1" >/dev/null 2>&1; }
 
@@ -86,7 +97,7 @@ while [[ $# -gt 0 ]]; do
     --systemd) FORCE_SYSTEMD=1; shift;;
     --port) PORT="${2:-}"; shift 2;;
     -h|--help) usage; exit 0;;
-    *) warn "Unknown option: $1"; shift;;
+    *) shift;; # Ignore unknown options
   esac
 done
 
@@ -109,11 +120,21 @@ repo_root_from_dir() {
 }
 
 have_systemd() {
-  [ "$FORCE_NOHUP" -eq 0 ] && [ -f "/etc/systemd/system/$SERVICE_NAME" ] && exists systemctl
+  # Only use systemd if: not forcing nohup, unit file exists, systemctl exists,
+  # and passwordless sudo is available to control the service.
+  if [ "$FORCE_NOHUP" -ne 0 ]; then return 1; fi
+  [ -f "/etc/systemd/system/$SERVICE_NAME" ] || return 1
+  exists systemctl || return 1
+  if exists sudo; then
+    sudo -n true >/dev/null 2>&1 || return 1
+  else
+    return 1
+  fi
+  return 0
 }
 
 stop_service() {
-  log "Stopping service/processes on port $PORT"
+  section "Stop service/processes on port $PORT"
   if have_systemd; then
     sudo systemctl stop "$SERVICE_NAME" || true
   else
@@ -316,6 +337,17 @@ is_port_listening() {
 
 is_port_free() { ! is_port_listening "$1"; }
 
+run_migrations() {
+  log "Running migrations"
+  # Prefer migrations script from the deployed DEST_DIR
+  local scripts_dir="$DEST_DIR/scripts"
+  if [ ! -f "$scripts_dir/run-migrations.js" ]; then
+    err "run-migrations.js not found in $scripts_dir"
+    return 1
+  fi
+  (cd "$DEST_DIR" && node "$scripts_dir/run-migrations.js" "$@")
+}
+
 # --------- Commands ---------
 case "$CMD" in
   clone)
@@ -335,17 +367,24 @@ case "$CMD" in
     require_cmd git; require_cmd npm
     # Apply env file if provided (prefer non-sudo copy; fallback to sudo if necessary)
     if [ -n "$ENV_FILE" ]; then
-      if [ -f "$ENV_FILE" ]; then
-        if cp "$ENV_FILE" "$DEST_DIR/.env" 2>/dev/null; then :; else
-          if exists sudo; then sudo cp "$ENV_FILE" "$DEST_DIR/.env" && sudo chown "$(whoami):$(id -gn)" "$DEST_DIR/.env"; else
-            err "Cannot write $DEST_DIR/.env and sudo is unavailable"; exit 1; fi
-        fi
+      section "Apply environment file"
+      dest_env="$DEST_DIR/.env"
+      if [ "$(realpath "${ENV_FILE:-}" 2>/dev/null)" = "$(realpath "$dest_env" 2>/dev/null)" ]; then
+        log "ENV_FILE already at destination ($dest_env); skipping copy"
       else
-        err "--env-file not found: $ENV_FILE"; exit 1
+        if [ -f "$ENV_FILE" ]; then
+          if cp "$ENV_FILE" "$dest_env" 2>/dev/null; then :; else
+            if exists sudo; then sudo cp "$ENV_FILE" "$dest_env" && sudo chown "$(whoami):$(id -gn)" "$dest_env"; else
+              err "Cannot write $dest_env and sudo is unavailable"; exit 1; fi
+          fi
+        else
+          err "--env-file not found: $ENV_FILE"; exit 1
+        fi
       fi
     fi
     # Checkout/update code
     if [ -d "$DEST_DIR/.git" ]; then
+      section "Fetch and checkout $REF"
       log "Fetching and checking out $REF in $DEST_DIR"
       git -C "$DEST_DIR" fetch --all --prune --tags
       if git -C "$DEST_DIR" rev-parse --verify -q "$REF" >/dev/null 2>&1; then
@@ -355,6 +394,7 @@ case "$CMD" in
       fi
     else
       # Overlay mode: clone to a temp dir and sync into DEST_DIR, preserving .env
+      section "Overlay clone into $DEST_DIR"
       log "Overlaying code into $DEST_DIR (no .git found); preserving .env"
       tmpdir=$(mktemp -d 2>/dev/null || mktemp -d -t eassist)
       trap 'rm -rf "$tmpdir" || true' EXIT
@@ -383,6 +423,7 @@ case "$CMD" in
       fi
     fi
     # Install deps
+    section "Install dependencies"
     if [ -f "$DEST_DIR/package-lock.json" ]; then
       log "Installing dependencies (npm ci)"
       ( cd "$DEST_DIR" && npm ci )
@@ -390,16 +431,26 @@ case "$CMD" in
       log "Installing dependencies (npm install)"
       ( cd "$DEST_DIR" && npm install --no-audit --no-fund )
     fi
+    section "Finalize environment"
     ensure_env_and_port
     persist_build_meta
+    section "Stop previous instance"
     stop_service || warn "Stop may have failed; proceeding"
+    section "Run migrations"
     run_migrations
-    if [ "$RUN_SEED" -eq 1 ]; then run_seed; else log "Skipping seeding (--no-seed)"; fi
+    if [ "$RUN_SEED" -eq 1 ]; then
+      section "Database seeding"
+      run_seed
+    else
+      log "Skipping seeding (--no-seed)"
+    fi
+    section "Start service"
     if [ "$FORCE_NOHUP" -eq 1 ] || ! have_systemd; then
       start_nohup
     else
       start_systemd
     fi
+    section "Wait for readiness"
     wait_ready
     ;;
 
@@ -455,4 +506,3 @@ case "$CMD" in
     err "Unknown command: $CMD"; usage; exit 2;;
 
 esac
-
