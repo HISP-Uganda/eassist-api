@@ -82,4 +82,4 @@ jobs:
 
       - name: Post-deploy check (port 8080)
         run: |
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} "ss -ltnp | grep -q ':8080 ' && echo 'API listening on 8080' || (echo 'No listener on 8080' && exit 1)"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes ${{ secrets.DEPLOY_USER || 'gitdeploy' }}@${{ secrets.DEPLOY_HOST }} "ss -ltn | grep -q ':8080 ' && echo 'API listening on 8080' || (echo 'No listener on 8080' && exit 1)"
